@@ -1,0 +1,60 @@
+{
+  "name": "@chymeral/node-sdk",
+  "version": "1.0.0",
+  "description": "Official Node.js and TypeScript client SDK for applications compatible with the Chymeral Link Protocol (CLP).",
+  "keywords": [
+    "chymeral",
+    "clp",
+    "terminal",
+    "graphics",
+    "gui",
+    "typescript",
+    "nodejs"
+  ],
+  "license": "MIT",
+  "author": "Chymeral",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Chymeral/chymeral-node-sdk.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Chymeral/chymeral-node-sdk/issues"
+  },
+  "homepage": "https://github.com/Chymeral/chymeral-node-sdk#readme",
+  "scripts": {
+    "build": "tsc --project tsconfig.build.json",
+    "check": "tsc --noEmit --project tsconfig.json",
+    "test": "tsx --test test/*.test.ts",
+    "test:watch": "tsx --watch --test test/*.test.ts",
+    "format": "prettier --check .",
+    "format:write": "prettier --write .",
+    "ci": "npm run check && npm run test && npm run build && npm run format",
+    "example:conformance": "tsx examples/clp-conformance.ts",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run ci"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.21",
+    "prettier": "^3.5.3",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  }
+}

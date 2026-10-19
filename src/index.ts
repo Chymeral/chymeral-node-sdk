@@ -1,0 +1,72 @@
+/**
+ * Official Node.js and TypeScript client SDK for the Chymeral Link Protocol.
+ *
+ * Public API names use idiomatic camelCase. The SDK serializes them to the
+ * stable CLP v2.0 wire format internally.
+ */
+export { Client } from "./client.js";
+export {
+  CapabilityNotGrantedError,
+  ClpError,
+  CommandError,
+  HostError,
+  InvalidInputError,
+  MissingEnvironmentError,
+  ProtocolError,
+  SessionClosedError,
+  TransportError,
+} from "./errors.js";
+export {
+  ALL_CAPABILITIES,
+  BINARY_FRAGMENT_BYTES,
+  CLP_PROTOCOL_VERSION,
+  ENDPOINT_ENV,
+  MAX_FRAME_BYTES,
+  MAX_GIF_BYTES,
+  MAX_STATIC_IMAGE_BYTES,
+  TOKEN_ENV,
+} from "./types.js";
+export type {
+  Capability,
+  CloseReason,
+  CreateNodeOptions,
+  CreatedNode,
+  DeliveryCategory,
+  Event,
+  ExternalFile,
+  FocusState,
+  ImageContactShape,
+  ImageHandle,
+  ImageUpload,
+  InitContext,
+  Key,
+  KeyState,
+  Modifiers,
+  NodeChanges,
+  NodeHandle,
+  NodeInput,
+  NodeParent,
+  NodeProperties,
+  NodePropertiesPatch,
+  NodeVisual,
+  Notification,
+  PointerButton,
+  ProgramPhase,
+  ProtocolVersion,
+  Resize,
+  Rgba8,
+  SceneEvent,
+  SceneLayer,
+  ScrollUnit,
+  SessionId,
+  SessionInfo,
+  StartupCommand,
+  Subscription,
+  TerminalState,
+  TextAlign,
+  TextMetrics,
+  TextNodeProperties,
+  TextStyle,
+  TextWeight,
+  Vec2,
+} from "./types.js";
