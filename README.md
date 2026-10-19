@@ -74,13 +74,13 @@ that do not need CLP access.
 
 ## Installation
 
-Once the package is published on npm:
+Install the published package from npm:
 
 ```text
 npm install @chymeral/node-sdk
 ```
 
-For local SDK development before publication:
+For development against a local SDK checkout:
 
 ```text
 cd chymeral-node-sdk
@@ -309,12 +309,15 @@ supported Node.js versions.
   — architectural decisions behind the SDK.
 - [Chymeral manual](https://github.com/Chymeral/chymeral/blob/main/Main_Manual.md)
   — host configuration, terminal behavior, and runtime semantics.
+- [Chymeral Rust SDK](https://github.com/Chymeral/chymeral-rust-sdk) — the
+  separate Rust reference and conformance client, published on
+  [crates.io](https://crates.io/crates/chymeral-rust-sdk).
 - [Changelog](https://github.com/Chymeral/chymeral-node-sdk/blob/main/CHANGELOG.md)
   — user-visible package history.
 
-CLP is language-neutral. This SDK is a Node.js convenience layer and
-conformance implementation, not a protocol fork or a requirement for
-applications written in another language.
+CLP is language-neutral. This SDK and the separate Rust SDK are client
+implementations, not protocol forks or requirements for applications written
+in another language.
 
 ## License
 
