@@ -1,0 +1,2 @@
+# Keep text files stable across Linux and Windows checkouts.
+* text=auto eol=lf
