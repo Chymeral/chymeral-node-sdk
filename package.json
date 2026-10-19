@@ -1,6 +1,6 @@
 {
   "name": "@chymeral/node-sdk",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Official Node.js and TypeScript client SDK for applications compatible with the Chymeral Link Protocol (CLP).",
   "keywords": [
     "chymeral",

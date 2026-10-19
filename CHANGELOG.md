@@ -8,6 +8,14 @@ CLP have independent version lines.
 
 No unreleased public API changes.
 
+## [1.0.1] - 2026-10-19
+
+### Fixed
+
+- Replaced relative license links in the packaged README with the canonical
+  GitHub license URL, so the link works from npm as well as from the source
+  repository.
+
 ## [1.0.0] - 2026-10-19
 
 ### Added
