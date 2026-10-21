@@ -82,6 +82,12 @@ host behavior including timing, resources, text metrics, alpha contact, GIF
 mutation, overlap, and a session-only close. Its `--manual` mode mirrors the
 visual interaction test used by the Rust reference SDK.
 
+M22 adds a versioned, language-neutral CLP v2.0 fixture corpus in the host
+repository. This package vendors the exact snapshot and SHA-256 manifest, then
+replays every vector through its public asynchronous API and an independent
+fake host in the Linux/Windows Node.js 22 and 24 matrix. It does not depend on
+host code or network retrieval during CI.
+
 ## Intentional boundaries
 
 - This package is a CLP client, not a terminal, widget toolkit, graphics engine

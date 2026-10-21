@@ -294,8 +294,16 @@ upload/removal, text metrics, alpha contact, overlap, and session-only closure.
 The manual mode additionally presents a layered scene for pointer, alpha,
 passthrough, GIF, and external-drop checks.
 
+The host repository maintains a versioned,
+language-neutral [CLP v2.0 fixture corpus](https://github.com/Chymeral/chymeral/tree/main/protocol/fixtures/v2.0).
+This package vendors its exact snapshot in `fixtures/clp/v2.0`, including
+`SHA256SUMS`. Its corpus test verifies that checksum and replays every vector
+through the public client and an independent fake host. Update both files only
+from a reviewed core revision. The corpus complements, rather than replaces,
+this package's focused fake-host tests and live conformance executable.
+
 GitHub Actions runs the repository quality checks on Linux and Windows with
-supported Node.js versions.
+Node.js 22 and 24; `npm run ci` includes the vendored corpus replay.
 
 ## Documentation and governance
 
@@ -309,6 +317,8 @@ supported Node.js versions.
   — architectural decisions behind the SDK.
 - [Chymeral manual](https://github.com/Chymeral/chymeral/blob/main/Main_Manual.md)
   — host configuration, terminal behavior, and runtime semantics.
+- [CLP v2.0 fixture corpus](https://github.com/Chymeral/chymeral/tree/main/protocol/fixtures/v2.0)
+  — portable, language-neutral frame vectors for SDK conformance work.
 - [Chymeral Rust SDK](https://github.com/Chymeral/chymeral-rust-sdk) — the
   separate Rust reference and conformance client, published on
   [crates.io](https://crates.io/crates/chymeral-rust-sdk).

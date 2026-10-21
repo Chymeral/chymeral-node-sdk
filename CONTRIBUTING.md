@@ -58,6 +58,12 @@ or supported platform must include:
 3. A `CHANGELOG.md` entry when it changes public behavior.
 4. A live conformance update when it changes the host-facing contract.
 
+Use the versioned [CLP v2.0 fixture corpus](https://github.com/Chymeral/chymeral/tree/main/protocol/fixtures/v2.0)
+as the source of `fixtures/clp/v2.0/fixtures.json` and `SHA256SUMS`. Update
+those two files together from a reviewed core revision, then run `npm test`.
+Do not add a network download or a dependency on the Chymeral host to this
+package's ordinary CI.
+
 CLP is language-neutral. Do not add Node-only wire behavior, host internals as
 a dependency, silent compatibility aliases, or APIs that cannot be represented
 by another conforming client. Coordinate a proposed wire-contract change with

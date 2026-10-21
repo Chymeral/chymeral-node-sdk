@@ -2,3 +2,4 @@ node_modules/
 dist/
 coverage/
 package-lock.json
+fixtures/clp/v2.0/fixtures.json
