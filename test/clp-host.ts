@@ -13,7 +13,7 @@ interface Waiter {
 
 const MAX_FRAME_BYTES = 1024 * 1024;
 
-/** A tiny single-session CLP host used to test the public Node client. */
+/** A tiny sequential-session CLP host used to test the public Node client. */
 export class FakeClpHost {
   private readonly frames: ReceivedFrame[] = [];
   private readonly waiters: Waiter[] = [];
@@ -96,13 +96,23 @@ export class FakeClpHost {
   }
 
   private attach(socket: net.Socket): void {
-    if (this.socket !== undefined) {
-      socket.destroy();
-      return;
+    if (this.socket !== undefined && this.socket !== socket) {
+      this.socket.destroy();
     }
     this.socket = socket;
-    socket.on("data", (chunk: Buffer) => this.receive(chunk));
+    this.buffered = Buffer.alloc(0);
+    socket.on("data", (chunk: Buffer) => {
+      if (this.socket === socket) {
+        this.receive(chunk);
+      }
+    });
     socket.on("error", () => undefined);
+    socket.once("close", () => {
+      if (this.socket === socket) {
+        this.socket = undefined;
+        this.buffered = Buffer.alloc(0);
+      }
+    });
     for (const resolve of this.connectionWaiters.splice(0)) {
       resolve(socket);
     }
@@ -114,7 +124,7 @@ export class FakeClpHost {
   }
 
   private waitForSocket(): Promise<net.Socket> {
-    if (this.socket !== undefined) {
+    if (this.socket !== undefined && !this.socket.destroyed) {
       return Promise.resolve(this.socket);
     }
     if (this.stopped) {

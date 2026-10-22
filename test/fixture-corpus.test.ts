@@ -4,11 +4,12 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-import { Client, CommandError, type NodeHandle } from "../src/index.js";
+import { ALL_CAPABILITIES, Client, CommandError, type NodeHandle } from "../src/index.js";
 import { FakeClpHost } from "./clp-host.js";
 
 const FIXTURE_TOKEN = "fixture-token-not-a-secret";
-const FIXTURE_DIRECTORY = fileURLToPath(new URL("../fixtures/clp/v2.0/", import.meta.url));
+const FIXTURE_V2_0_DIRECTORY = fileURLToPath(new URL("../fixtures/clp/v2.0/", import.meta.url));
+const FIXTURE_V2_1_DIRECTORY = fileURLToPath(new URL("../fixtures/clp/v2.1/", import.meta.url));
 
 type FixtureDirection = "client_to_host" | "host_to_client";
 type FixtureKind = "json" | "binary";
@@ -117,11 +118,57 @@ class FixtureTranscript {
 }
 
 test("replays the vendored canonical CLP v2.0 fixture corpus through the public client", async (context) => {
-  const corpus = await loadFixtureCorpus();
+  const corpus = await loadFixtureCorpus(FIXTURE_V2_0_DIRECTORY, { major: 2, minor: 0 });
   await replayLifecycle(corpus, context);
   await replaySceneAndOverlap(corpus, context);
   await replayImages(corpus, context);
   await replayDeliveryErrorsAndFaultClose(corpus, context);
+});
+
+test("replays the vendored canonical CLP v2.1 presentation fixture through the public client", async (context) => {
+  const corpus = await loadFixtureCorpus(FIXTURE_V2_1_DIRECTORY, { major: 2, minor: 1 });
+  const host = await FakeClpHost.start();
+  context.after(() => host.close());
+  const transcript = new FixtureTranscript(vector(corpus, "frame-presentation").frames);
+  const client = await connectV21FixtureClient(host, transcript);
+
+  assert.deepEqual(client.session.protocolVersion, { major: 2, minor: 1 });
+  assert.equal(client.hasCapability("presentation"), true);
+
+  client.presentSceneWithId("fixture-presentation-1", [
+    { node: "node-1" as NodeHandle, properties: { x: 96, y: 64 } },
+    { node: "node-2" as NodeHandle, properties: { width: 48, height: 24 } },
+  ]);
+  await transcript.expectClientJson(host);
+  await transcript.sendHostJson(host);
+  assert.deepEqual(await client.nextNotification(), {
+    kind: "presentation_status",
+    presentation: {
+      presentationId: "fixture-presentation-1",
+      status: "presented",
+    },
+  });
+
+  client.presentSceneWithId("fixture-presentation-2", [
+    { node: "node-3" as NodeHandle, properties: { width: 88 } },
+  ]);
+  await transcript.expectClientJson(host);
+  await transcript.sendHostJson(host);
+  assert.deepEqual(await client.nextNotification(), {
+    kind: "presentation_status",
+    presentation: {
+      presentationId: "fixture-presentation-2",
+      status: "rejected",
+      code: "invalid_node_change",
+      message: "node-3 has intrinsic text bounds that cannot be set directly",
+    },
+  });
+
+  const close = client.close();
+  await transcript.expectClientJson(host);
+  await transcript.sendHostJson(host);
+  assert.deepEqual(await close, { kind: "client_requested" });
+  transcript.assertComplete();
 });
 
 async function replayLifecycle(corpus: FixtureCorpus, context: test.TestContext): Promise<void> {
@@ -406,6 +453,17 @@ async function connectFixtureClient(
   transcript: FixtureTranscript,
 ): Promise<Client> {
   const connecting = Client.connect(host.endpoint, FIXTURE_TOKEN);
+  assert.deepEqual(await host.nextJson(), {
+    type: "hello",
+    protocol: { major: 2, minor: 1 },
+    token: FIXTURE_TOKEN,
+    capabilities: [...ALL_CAPABILITIES],
+  });
+  await host.sendJson({
+    type: "error",
+    code: "unsupported_version",
+    message: "fixture CLP v2.0 host",
+  });
   await transcript.expectClientJson(host);
   await transcript.sendHostJson(host);
   await transcript.expectClientJson(host);
@@ -414,10 +472,26 @@ async function connectFixtureClient(
   return connecting;
 }
 
-async function loadFixtureCorpus(): Promise<FixtureCorpus> {
+async function connectV21FixtureClient(
+  host: FakeClpHost,
+  transcript: FixtureTranscript,
+): Promise<Client> {
+  const connecting = Client.connect(host.endpoint, FIXTURE_TOKEN);
+  await transcript.expectClientJson(host);
+  await transcript.sendHostJson(host);
+  await transcript.expectClientJson(host);
+  await transcript.sendHostJson(host);
+  await transcript.expectClientJson(host);
+  return connecting;
+}
+
+async function loadFixtureCorpus(
+  directory: string,
+  protocol: FixtureCorpus["protocol"],
+): Promise<FixtureCorpus> {
   const [fixtureBytes, checksumBytes] = await Promise.all([
-    readFile(`${FIXTURE_DIRECTORY}fixtures.json`),
-    readFile(`${FIXTURE_DIRECTORY}SHA256SUMS`),
+    readFile(`${directory}fixtures.json`),
+    readFile(`${directory}SHA256SUMS`),
   ]);
   const expectedHash = checksumBytes.toString("utf8").trim().split(/\s+/)[0];
   if (expectedHash === undefined || expectedHash.length === 0) {
@@ -428,7 +502,7 @@ async function loadFixtureCorpus(): Promise<FixtureCorpus> {
   const corpus = JSON.parse(fixtureBytes.toString("utf8")) as FixtureCorpus;
   assert.equal(corpus.format, "chymeral-clp-fixture-corpus");
   assert.equal(corpus.fixture_version, 1);
-  assert.deepEqual(corpus.protocol, { major: 2, minor: 0 });
+  assert.deepEqual(corpus.protocol, protocol);
   assert.equal(corpus.transport.maximum_frame_bytes, 1024 * 1024);
   assert.equal(corpus.transport.json_discriminator, "J");
   assert.equal(corpus.transport.binary_discriminator, "B");

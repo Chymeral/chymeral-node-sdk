@@ -17,7 +17,16 @@ export const MAX_STATIC_IMAGE_BYTES = 64 * 1024 * 1024;
 export const MAX_GIF_BYTES = 16 * 1024 * 1024;
 
 /** The CLP version implemented by this SDK. */
-export const CLP_PROTOCOL_VERSION = { major: 2, minor: 0 } as const;
+export const CLP_PROTOCOL_VERSION = { major: 2, minor: 1 } as const;
+
+/** Maximum geometry updates accepted in one frame-presentation packet. */
+export const MAX_PRESENTATION_UPDATES = 256;
+
+/** Maximum JSON payload accepted for one frame-presentation packet. */
+export const MAX_PRESENTATION_PACKET_BYTES = 64 * 1024;
+
+/** Maximum UTF-8 byte length of a presentation identifier. */
+export const MAX_PRESENTATION_ID_BYTES = 128;
 
 /** A CLP protocol version. */
 export interface ProtocolVersion {
@@ -34,14 +43,16 @@ export const ALL_CAPABILITIES = [
   "overlap",
   "external_drop",
   "text",
+  "presentation",
 ] as const;
 
-/** A capability name accepted by CLP v2.0. */
+/** A capability name accepted by CLP v2.1. */
 export type Capability = (typeof ALL_CAPABILITIES)[number];
 
 declare const sessionIdBrand: unique symbol;
 declare const nodeHandleBrand: unique symbol;
 declare const imageHandleBrand: unique symbol;
+declare const presentationIdBrand: unique symbol;
 
 /** An opaque Chymeral session identity. */
 export type SessionId = string & { readonly [sessionIdBrand]: "SessionId" };
@@ -51,6 +62,9 @@ export type NodeHandle = string & { readonly [nodeHandleBrand]: "NodeHandle" };
 
 /** An opaque uploaded-image handle, valid only in its creating session. */
 export type ImageHandle = string & { readonly [imageHandleBrand]: "ImageHandle" };
+
+/** A client-generated identity for an asynchronous presentation packet. */
+export type PresentationId = string & { readonly [presentationIdBrand]: "PresentationId" };
 
 /** A startup command supplied in the host initialization context. */
 export interface StartupCommand {
@@ -116,6 +130,22 @@ export interface NodePropertiesPatch {
   readonly overlapEnabled?: boolean;
   readonly externalDropEnabled?: boolean;
   readonly inputPassthrough?: boolean;
+}
+
+/** Geometry fields eligible for frame-paced scene presentation. */
+export interface PresentationPropertiesPatch {
+  readonly x?: number;
+  readonly y?: number;
+  /** Intrinsic text nodes cannot receive this field. */
+  readonly width?: number;
+  /** Intrinsic text nodes cannot receive this field. */
+  readonly height?: number;
+}
+
+/** One node geometry update in an atomic presentation packet. */
+export interface PresentationUpdate {
+  readonly node: NodeHandle;
+  readonly properties: PresentationPropertiesPatch;
 }
 
 /** The interactive shape of a static RGBA8 or animated GIF image node. */
@@ -375,6 +405,17 @@ export interface Resize {
   readonly scaleFactor: number;
 }
 
+/** Outcome of an asynchronous frame-presentation packet. */
+export type PresentationState = "presented" | "rejected" | "superseded";
+
+/** A coalesced host status for a client-generated presentation identifier. */
+export interface PresentationStatus {
+  readonly presentationId: PresentationId;
+  readonly status: PresentationState;
+  readonly code?: string;
+  readonly message?: string;
+}
+
 /** A notification delivered after the CLP lifecycle handshake. */
 export type Notification =
   | { readonly kind: "event"; readonly event: Event }
@@ -382,5 +423,6 @@ export type Notification =
   | { readonly kind: "frame"; readonly dtNs: bigint }
   | { readonly kind: "resize"; readonly resize: Resize }
   | { readonly kind: "delivery_gap"; readonly categories: readonly DeliveryCategory[] }
+  | { readonly kind: "presentation_status"; readonly presentation: PresentationStatus }
   | { readonly kind: "closing"; readonly reason: CloseReason }
   | { readonly kind: "closed"; readonly reason: CloseReason };

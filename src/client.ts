@@ -15,6 +15,9 @@ import {
   CLP_PROTOCOL_VERSION,
   ENDPOINT_ENV,
   MAX_GIF_BYTES,
+  MAX_PRESENTATION_ID_BYTES,
+  MAX_PRESENTATION_PACKET_BYTES,
+  MAX_PRESENTATION_UPDATES,
   MAX_STATIC_IMAGE_BYTES,
   TOKEN_ENV,
   type Capability,
@@ -38,6 +41,10 @@ import {
   type NodePropertiesPatch,
   type NodeVisual,
   type Notification,
+  type PresentationId,
+  type PresentationPropertiesPatch,
+  type PresentationState,
+  type PresentationUpdate,
   type PointerButton,
   type ProgramPhase,
   type ProtocolVersion,
@@ -55,6 +62,7 @@ import {
 } from "./types.js";
 
 const MAX_PENDING_NOTIFICATIONS = 4_096;
+const CLP_PROTOCOL_V2_0: ProtocolVersion = { major: 2, minor: 0 };
 
 interface Deferred<T> {
   readonly promise: Promise<T>;
@@ -65,6 +73,11 @@ interface Deferred<T> {
 interface PendingCommand {
   readonly requestId: string;
   readonly deferred: Deferred<Record<string, unknown>>;
+}
+
+interface PendingPresentation {
+  readonly presentationId: PresentationId;
+  readonly updates: readonly Record<string, unknown>[];
 }
 
 function deferred<T>(): Deferred<T> {
@@ -78,7 +91,7 @@ function deferred<T>(): Deferred<T> {
 }
 
 /**
- * An asynchronous, dependency-free CLP v2.0 client for Node.js.
+ * An asynchronous, dependency-free CLP v2.1 client for Node.js.
  *
  * `connectFromEnv` completes the `hello → init → init_complete → start →
  * started` lifecycle before resolving. Commands are serialized so a binary
@@ -89,7 +102,10 @@ export class Client {
   private readonly sessionInfo: SessionInfo;
   private operationTail: Promise<void> = Promise.resolve();
   private nextRequest = 1;
+  private nextPresentation = 1;
   private pendingCommand: PendingCommand | undefined;
+  private pendingPresentation: PendingPresentation | undefined;
+  private presentationFlush: Promise<void> | undefined;
   private pendingSubscription: Deferred<readonly Subscription[]> | undefined;
   private pendingClose: Deferred<CloseReason> | undefined;
   private closedReason: CloseReason | undefined;
@@ -139,12 +155,39 @@ export class Client {
       throw new InvalidInputError("the CLP token may not be empty");
     }
     const capabilities = normalizeCapabilities(requestedCapabilities);
+    try {
+      return await Client.connectOnce(endpoint, token, capabilities, CLP_PROTOCOL_VERSION);
+    } catch (error) {
+      if (
+        error instanceof HostError &&
+        (error.code === "unsupported_version" || error.code === "invalid_message")
+      ) {
+        // CLP v2.0 hosts predate the presentation capability and can reject
+        // that enum value before they reach version negotiation. Retry once
+        // with the frozen v2.0 capability set.
+        return Client.connectOnce(
+          endpoint,
+          token,
+          capabilities.filter((capability) => capability !== "presentation"),
+          CLP_PROTOCOL_V2_0,
+        );
+      }
+      throw error;
+    }
+  }
+
+  private static async connectOnce(
+    endpoint: string,
+    token: string,
+    capabilities: readonly Capability[],
+    requestedProtocol: ProtocolVersion,
+  ): Promise<Client> {
     const transport = await FramedTransport.connect(endpoint);
 
     try {
       await transport.sendJson({
         type: "hello",
-        protocol: CLP_PROTOCOL_VERSION,
+        protocol: requestedProtocol,
         token,
         capabilities,
       });
@@ -158,12 +201,9 @@ export class Client {
       }
 
       const protocol = decodeProtocolVersion(init.protocol, "init.protocol");
-      if (
-        protocol.major !== CLP_PROTOCOL_VERSION.major ||
-        protocol.minor > CLP_PROTOCOL_VERSION.minor
-      ) {
+      if (protocol.major !== requestedProtocol.major || protocol.minor > requestedProtocol.minor) {
         throw new ProtocolError(
-          `host negotiated unsupported version ${protocol.major}.${protocol.minor}; SDK supports ${CLP_PROTOCOL_VERSION.major}.${CLP_PROTOCOL_VERSION.minor}`,
+          `host negotiated unsupported version ${protocol.major}.${protocol.minor}; requested ${requestedProtocol.major}.${requestedProtocol.minor}`,
         );
       }
       const sessionId = decodeSessionId(init.session_id, "init.session_id");
@@ -288,6 +328,63 @@ export class Client {
       throw unexpectedCommandResult("node_updated", result);
     }
     return decodeOptionalTextMetrics(result.text_metrics, "command result.text_metrics");
+  }
+
+  /**
+   * Coalesces transient node geometry into the newest frame-presentation
+   * packet. It returns immediately without awaiting a command response; the
+   * host later emits a `presentation_status` notification.
+   *
+   * This method never turns a packet into individual `setNode` calls when a
+   * CLP v2.0 host is negotiated. It throws `CapabilityNotGrantedError` for
+   * `presentation` instead.
+   */
+  public presentScene(updates: Iterable<PresentationUpdate>): PresentationId {
+    const presentationId = this.nextPresentationIdentifier();
+    this.presentSceneWithId(presentationId, updates);
+    return presentationId;
+  }
+
+  /** Sends a presentation packet with an application-supplied identifier. */
+  public presentSceneWithId(presentationId: string, updates: Iterable<PresentationUpdate>): void {
+    this.requireCapability("scene");
+    this.requireCapability("presentation");
+    this.ensureOpen();
+    const serializedUpdates = Array.from(updates, (update, index) =>
+      serializePresentationUpdate(update, `updates[${index}]`),
+    );
+    if (serializedUpdates.length === 0) {
+      throw new InvalidInputError("a presentation packet requires at least one update");
+    }
+    if (serializedUpdates.length > MAX_PRESENTATION_UPDATES) {
+      throw new InvalidInputError(
+        `a presentation packet may update at most ${MAX_PRESENTATION_UPDATES} nodes`,
+      );
+    }
+    const nodeHandles = new Set<string>();
+    for (const update of serializedUpdates) {
+      const node = stringField(update, "node", "presentation update");
+      if (nodeHandles.has(node)) {
+        throw new InvalidInputError(`a presentation packet updates ${node} more than once`);
+      }
+      nodeHandles.add(node);
+    }
+    const checkedPresentationId = validatePresentationId(presentationId, "presentationId");
+    const wire = {
+      type: "present_scene",
+      presentation_id: checkedPresentationId,
+      updates: serializedUpdates,
+    };
+    if (Buffer.byteLength(JSON.stringify(wire), "utf8") > MAX_PRESENTATION_PACKET_BYTES) {
+      throw new InvalidInputError(
+        `a presentation packet may not exceed ${MAX_PRESENTATION_PACKET_BYTES} bytes`,
+      );
+    }
+    this.pendingPresentation = {
+      presentationId: checkedPresentationId,
+      updates: serializedUpdates,
+    };
+    this.schedulePresentationFlush();
   }
 
   /** Removes a node and all of its descendants. */
@@ -442,6 +539,39 @@ export class Client {
     }
   }
 
+  private schedulePresentationFlush(): void {
+    if (this.presentationFlush !== undefined) {
+      return;
+    }
+    const flush = this.enqueue(async () => {
+      try {
+        this.ensureOpen();
+        const presentation = this.pendingPresentation;
+        this.pendingPresentation = undefined;
+        if (presentation !== undefined) {
+          await this.transport.sendJson({
+            type: "present_scene",
+            presentation_id: presentation.presentationId,
+            updates: presentation.updates,
+          });
+        }
+      } finally {
+        this.presentationFlush = undefined;
+        if (
+          this.pendingPresentation !== undefined &&
+          this.failure === undefined &&
+          this.closedReason === undefined
+        ) {
+          this.schedulePresentationFlush();
+        }
+      }
+    });
+    this.presentationFlush = flush;
+    void flush.catch((error: unknown) =>
+      this.fail(error instanceof Error ? error : new ProtocolError(String(error))),
+    );
+  }
+
   private enqueue<T>(operation: () => Promise<T>): Promise<T> {
     const run = this.operationTail.then(operation, operation);
     this.operationTail = run.then(
@@ -505,6 +635,7 @@ export class Client {
       case "frame":
       case "resize":
       case "delivery_gap":
+      case "presentation_status":
       case "closing":
       case "closed": {
         const notification = this.decodeNotification(message);
@@ -547,6 +678,11 @@ export class Client {
             "delivery_gap.categories",
           ),
         };
+      case "presentation_status":
+        return {
+          kind: "presentation_status",
+          presentation: decodePresentationStatus(message),
+        };
       case "closing":
         return { kind: "closing", reason: decodeCloseReason(message.reason, "closing.reason") };
       case "closed":
@@ -579,6 +715,7 @@ export class Client {
       return;
     }
     this.failure = error;
+    this.pendingPresentation = undefined;
     this.pendingCommand?.deferred.reject(error);
     this.pendingSubscription?.reject(error);
     this.pendingClose?.reject(error);
@@ -671,6 +808,13 @@ export class Client {
     if (properties.externalDropEnabled) {
       this.requireCapability("external_drop");
     }
+  }
+
+  private nextPresentationIdentifier(): PresentationId {
+    const presentationId = `node-sdk-presentation-${this.nextPresentation}` as PresentationId;
+    this.nextPresentation =
+      this.nextPresentation === Number.MAX_SAFE_INTEGER ? 1 : this.nextPresentation + 1;
+    return presentationId;
   }
 }
 
@@ -799,6 +943,43 @@ function serializeNodePropertiesPatch(properties: NodePropertiesPatch): Record<s
   return wire;
 }
 
+function serializePresentationUpdate(
+  update: PresentationUpdate,
+  context: string,
+): Record<string, unknown> {
+  return {
+    node: validateNodeHandle(update.node, `${context}.node`),
+    properties: serializePresentationPropertiesPatch(update.properties, `${context}.properties`),
+  };
+}
+
+function serializePresentationPropertiesPatch(
+  properties: PresentationPropertiesPatch,
+  context: string,
+): Record<string, unknown> {
+  const wire: Record<string, unknown> = {};
+  if (properties.x !== undefined) {
+    validateFiniteNumber(properties.x, `${context}.x`);
+    wire.x = properties.x;
+  }
+  if (properties.y !== undefined) {
+    validateFiniteNumber(properties.y, `${context}.y`);
+    wire.y = properties.y;
+  }
+  if (properties.width !== undefined) {
+    validateNonNegativeFiniteNumber(properties.width, `${context}.width`);
+    wire.width = properties.width;
+  }
+  if (properties.height !== undefined) {
+    validateNonNegativeFiniteNumber(properties.height, `${context}.height`);
+    wire.height = properties.height;
+  }
+  if (Object.keys(wire).length === 0) {
+    throw new InvalidInputError(`${context} must change at least one geometry property`);
+  }
+  return wire;
+}
+
 function serializeNodeVisual(visual: NodeVisual): Record<string, unknown> {
   validateNodeVisual(visual, "visual");
   switch (visual.kind) {
@@ -887,6 +1068,31 @@ function serializeImageUpload(image: ImageUpload): {
     default:
       return assertNever(image);
   }
+}
+
+function decodePresentationStatus(message: Record<string, unknown>): {
+  readonly presentationId: PresentationId;
+  readonly status: PresentationState;
+  readonly code?: string;
+  readonly message?: string;
+} {
+  const presentationId = decodePresentationId(
+    message.presentation_id,
+    "presentation_status.presentation_id",
+  );
+  const status = enumValue(
+    message.status,
+    ["presented", "rejected", "superseded"] as const,
+    "presentation_status.status",
+  );
+  const code = optionalString(message.code, "presentation_status.code");
+  const diagnostic = optionalString(message.message, "presentation_status.message");
+  const result = { presentationId, status };
+  if (code !== undefined && diagnostic !== undefined) {
+    return { ...result, code, message: diagnostic };
+  }
+  if (code !== undefined) return { ...result, code };
+  return diagnostic === undefined ? result : { ...result, message: diagnostic };
 }
 
 function decodeInitContext(value: unknown): InitContext {
@@ -1225,6 +1431,19 @@ function decodeImageHandle(value: unknown, context: string): ImageHandle {
   return validateHandle(stringValue(value, context), "image", context) as ImageHandle;
 }
 
+function decodePresentationId(value: unknown, context: string): PresentationId {
+  const presentationId = stringValue(value, context);
+  if (
+    presentationId.length === 0 ||
+    Buffer.byteLength(presentationId, "utf8") > MAX_PRESENTATION_ID_BYTES
+  ) {
+    throw new ProtocolError(
+      `${context} must contain between 1 and ${MAX_PRESENTATION_ID_BYTES} UTF-8 bytes`,
+    );
+  }
+  return presentationId as PresentationId;
+}
+
 function optionalNodeHandle(value: unknown, context: string): NodeHandle | undefined {
   return value === undefined || value === null ? undefined : decodeNodeHandle(value, context);
 }
@@ -1235,6 +1454,19 @@ function validateNodeHandle(value: NodeHandle, context: string): NodeHandle {
 
 function validateImageHandle(value: ImageHandle, context: string): ImageHandle {
   return validateHandle(value, "image", context) as ImageHandle;
+}
+
+function validatePresentationId(value: string, context: string): PresentationId {
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    Buffer.byteLength(value, "utf8") > MAX_PRESENTATION_ID_BYTES
+  ) {
+    throw new InvalidInputError(
+      `${context} must contain between 1 and ${MAX_PRESENTATION_ID_BYTES} UTF-8 bytes`,
+    );
+  }
+  return value as PresentationId;
 }
 
 function validateHandle(value: string, kind: string, context: string): string {

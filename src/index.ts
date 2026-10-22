@@ -2,7 +2,8 @@
  * Official Node.js and TypeScript client SDK for the Chymeral Link Protocol.
  *
  * Public API names use idiomatic camelCase. The SDK serializes them to the
- * stable CLP v2.0 wire format internally.
+ * CLP v2.1 wire format internally, with a one-time CLP v2.0 fallback for
+ * older hosts.
  */
 export { Client } from "./client.js";
 export {
@@ -23,6 +24,9 @@ export {
   ENDPOINT_ENV,
   MAX_FRAME_BYTES,
   MAX_GIF_BYTES,
+  MAX_PRESENTATION_ID_BYTES,
+  MAX_PRESENTATION_PACKET_BYTES,
+  MAX_PRESENTATION_UPDATES,
   MAX_STATIC_IMAGE_BYTES,
   TOKEN_ENV,
 } from "./types.js";
@@ -51,6 +55,11 @@ export type {
   NodeVisual,
   Notification,
   PointerButton,
+  PresentationId,
+  PresentationPropertiesPatch,
+  PresentationState,
+  PresentationStatus,
+  PresentationUpdate,
   ProgramPhase,
   ProtocolVersion,
   Resize,

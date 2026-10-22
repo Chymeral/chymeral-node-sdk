@@ -6,7 +6,25 @@ CLP have independent version lines.
 
 ## [Unreleased]
 
-No unreleased public API changes.
+### Added
+
+- Development CLP v2.1 support for the `presentation` capability,
+  `presentScene()`, `presentSceneWithId()`, presentation value types, and
+  `presentation_status` notifications.
+- A live `example:presentation` probe for pointer, scroll, resize, and
+  coalescible 60 Hz parent/control presentation traffic.
+- Byte-checked CLP v2.1 fixture replay for accepted and rejected packets.
+
+### Changed
+
+- `Client.connect()` retries once against a v2.0-only host without
+  `presentation`; presentation packets never silently become `setNode()`
+  calls.
+
+### Compatibility
+
+- These unreleased APIs target package `2.0.0`. Published `1.0.x` remains the
+  stable CLP v2.0 package line.
 
 ## [1.0.1] - 2026-10-19
 

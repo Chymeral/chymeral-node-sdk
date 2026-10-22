@@ -18,18 +18,19 @@ runtime exposed by a running Chymeral terminal. It is an external client
 library: it does not create a separate window, load into the host process, or
 make JavaScript and TypeScript privileged languages in the Chymeral ecosystem.
 
-The SDK presents idiomatic camelCase TypeScript APIs while serializing the
-stable CLP wire vocabulary internally. It implements the public CLP v2.0
-contract and has no runtime npm dependencies, native addons, or foreign-function
-interface.
+The SDK presents idiomatic camelCase TypeScript APIs while serializing the CLP
+wire vocabulary internally. The published `1.0.1` package implements public
+CLP v2.0; this development source also contains the unreleased CLP v2.1
+frame-presentation API targeted for package `2.0.0`. It has no runtime npm
+dependencies, native addons, or foreign-function interface.
 
 ## At a glance
 
 | Topic                | Current contract                                |
 | -------------------- | ----------------------------------------------- |
 | npm package          | `@chymeral/node-sdk`                            |
-| Package line         | `1.x`, stable public API                        |
-| Protocol             | CLP `v2.0`                                      |
+| Published package    | `1.0.1`, stable CLP `v2.0` API                  |
+| Development target   | `2.0.0`, unreleased CLP `v2.1` API              |
 | Runtime              | Node.js `22` or newer                           |
 | Platforms            | Linux and Windows                               |
 | Module format        | ESM only                                        |
@@ -39,7 +40,8 @@ interface.
 This repository is the source of the first Node SDK. Its package version is
 independent from both Chymeral and CLP versions: compatibility is negotiated at
 connection time. The `1.x` line is the stable public API and deliberately
-provides no provisional CLP v1.x aliases.
+provides no provisional CLP v1.x aliases. The source-tree v2.1 API is not
+published to npm yet.
 
 ## What it provides
 
@@ -52,6 +54,8 @@ provides no provisional CLP v1.x aliases.
   timing, resize, delivery-pressure, and closing notifications.
 - Session-owned RGBA8 and animated GIF uploads, including CLP binary-frame
   fragmentation and ordered command delivery.
+- Coalesced frame-presentation packets for bounded transient geometry in the
+  unreleased CLP v2.1 development contract.
 - Opaque TypeScript `NodeHandle`, `ImageHandle`, and `SessionId` brands.
 - A live conformance client and deterministic protocol tests that do not require
   a graphical window.
@@ -59,7 +63,8 @@ provides no provisional CLP v1.x aliases.
 ## Requirements
 
 - Node.js `22` or newer.
-- A Chymeral release that supports CLP v2.0.
+- A Chymeral release that supports CLP v2.0. The development-only presentation
+  example additionally requires an M23 CLP v2.1 host.
 - A program launched from the shell inside that Chymeral window, so it inherits
   `CHYMERAL_CLP_ENDPOINT` and `CHYMERAL_CLP_TOKEN`.
 
@@ -169,6 +174,7 @@ result with `client.hasCapability()`.
 | `overlap`       | Direct overlap queries and transition events                    |
 | `external_drop` | Incoming desktop-file drops on supported backends               |
 | `text`          | Intrinsic terminal-cell text nodes                              |
+| `presentation`  | **Unreleased CLP v2.1:** coalesced frame-paced geometry packets |
 
 `subscribe()` accepts `raw_input`, `terminal`, and `timing`. Notifications
 can be consumed with `nextNotification()`, `tryNextNotification()`, or the
@@ -200,6 +206,38 @@ atomic patch; `removeNode()` removes a node and all descendants.
 `uploadImage()` accepts either RGBA8 pixels or encoded GIF bytes and returns
 an opaque `ImageHandle`. Resources belong to the creating session and cannot
 be shared across sessions. Remove unreferenced resources with `removeImage()`.
+
+## Frame-paced presentation (unreleased CLP v2.1)
+
+Use `presentScene()` for the newest transient geometry, such as a draggable
+parent and a sibling scrollbar thumb. It is not an asynchronous replacement for
+the acknowledged `setNode()` control plane:
+
+```ts
+const presentationId = client.presentScene([
+  { node: viewportRoot, properties: { x: 128, y: 72 } },
+  { node: scrollbarThumb, properties: { y: 96 } },
+]);
+```
+
+Request both `scene` and `presentation`. A packet contains one through 256
+distinct owned nodes and changes only `x`, `y`, `width`, and `height`; intrinsic
+text accepts only `x` and `y`. The SDK validates empty, duplicate, non-finite,
+and oversized packets before writing them. It locally keeps only the newest
+unsent packet, and Chymeral keeps only the newest unpresented packet per
+session.
+
+Later notifications have `kind: "presentation_status"` and report
+`"presented"`, `"superseded"`, or `"rejected"`. They are advisory and
+coalesced, so an application must not await one status per pointer sample.
+`"presented"` reaches the host presentation call; it is not physical display
+scanout. Keep creation, removal, resource, text, visual, hierarchy, and
+interaction changes on `setNode()`.
+
+`Client.connect()` first requests CLP v2.1. If a v2.0-only host explicitly
+rejects the lifecycle request, it reconnects once using v2.0 without
+`presentation`. `presentScene()` then throws `CapabilityNotGrantedError`; it
+never expands a packet into individual `setNode()` calls.
 
 ## Interaction, overlap, and external drops
 
@@ -287,12 +325,20 @@ The conformance client needs an active Chymeral terminal session:
 ```text
 npm run example:conformance
 npm run example:conformance -- --manual
+npm run example:presentation
 ```
 
 The default run verifies lifecycle, subscriptions, timing, RGBA8/GIF image
 upload/removal, text metrics, alpha contact, overlap, and session-only closure.
 The manual mode additionally presents a layered scene for pointer, alpha,
 passthrough, GIF, and external-drop checks.
+
+`example:presentation` is the M23 development probe. With an M23 Chymeral
+build, click its blue panel once to focus it, move the pointer, scroll, resize,
+then press `b` for a 180-update 60 Hz burst and `q` for its observed
+application-submit-to-host-status summary. Start the host with
+`CHYMERAL_PRESENTATION_TRACE=1` for separately labelled host-stage timing; the
+probe does not claim physical input-to-photon timing.
 
 The host repository maintains a versioned,
 language-neutral [CLP v2.0 fixture corpus](https://github.com/Chymeral/chymeral/tree/main/protocol/fixtures/v2.0).
@@ -301,6 +347,10 @@ This package vendors its exact snapshot in `fixtures/clp/v2.0`, including
 through the public client and an independent fake host. Update both files only
 from a reviewed core revision. The corpus complements, rather than replaces,
 this package's focused fake-host tests and live conformance executable.
+
+The development tree also vendors the byte-checked
+[CLP v2.1 presentation fixture corpus](https://github.com/Chymeral/chymeral/tree/main/protocol/fixtures/v2.1).
+It verifies public packet serialization, status decoding, and v2.0 fallback.
 
 GitHub Actions runs the repository quality checks on Linux and Windows with
 Node.js 22 and 24; `npm run ci` includes the vendored corpus replay.
@@ -319,6 +369,8 @@ Node.js 22 and 24; `npm run ci` includes the vendored corpus replay.
   — host configuration, terminal behavior, and runtime semantics.
 - [CLP v2.0 fixture corpus](https://github.com/Chymeral/chymeral/tree/main/protocol/fixtures/v2.0)
   — portable, language-neutral frame vectors for SDK conformance work.
+- [CLP v2.1 presentation fixture corpus](https://github.com/Chymeral/chymeral/tree/main/protocol/fixtures/v2.1)
+  — development vectors for the M23 frame-presentation capability.
 - [Chymeral Rust SDK](https://github.com/Chymeral/chymeral-rust-sdk) — the
   separate Rust reference and conformance client, published on
   [crates.io](https://crates.io/crates/chymeral-rust-sdk).

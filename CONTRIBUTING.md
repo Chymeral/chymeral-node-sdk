@@ -40,6 +40,7 @@ For a live host check, start Chymeral, open its terminal, and run:
 ```text
 npm run example:conformance
 npm run example:conformance -- --manual
+npm run example:presentation
 ```
 
 The manual scenario is the required visual check for a change that affects
@@ -47,11 +48,18 @@ scene rendering, text, alpha contact, GIF animation, input passthrough,
 overlap, or external drops. Validate affected behavior on Linux and Windows
 when the change crosses an OS or backend boundary.
 
+The presentation probe is required for a CLP v2.1 frame-presentation change.
+Click its panel to focus the session, exercise pointer movement, scroll,
+resize, and the `b` burst, then compare its summary with an optional
+`CHYMERAL_PRESENTATION_TRACE=1` host trace. Do not describe either value as
+physical input-to-photon latency.
+
 ## Public API and protocol compatibility
 
-The SDK is a typed asynchronous binding for CLP v2.0. A change to a public
-export, type, serialization rule, lifecycle behavior, error, Node.js baseline,
-or supported platform must include:
+Published `1.0.x` is a typed asynchronous binding for CLP v2.0. The source
+tree's v2.1 presentation work targets the breaking `2.0.0` line. A change to a
+public export, type, serialization rule, lifecycle behavior, error, Node.js
+baseline, or supported platform must include:
 
 1. Focused automated tests.
 2. A README or reference-documentation update when users can observe it.
@@ -63,6 +71,11 @@ as the source of `fixtures/clp/v2.0/fixtures.json` and `SHA256SUMS`. Update
 those two files together from a reviewed core revision, then run `npm test`.
 Do not add a network download or a dependency on the Chymeral host to this
 package's ordinary CI.
+
+For a CLP v2.1 change, also update the reviewed
+[v2.1 presentation corpus](https://github.com/Chymeral/chymeral/tree/main/protocol/fixtures/v2.1)
+and its vendored `fixtures/clp/v2.1` snapshot together. Check both hashes and
+keep the v2.0 replay to prove one-time fallback compatibility.
 
 CLP is language-neutral. Do not add Node-only wire behavior, host internals as
 a dependency, silent compatibility aliases, or APIs that cannot be represented

@@ -16,7 +16,7 @@ import { FakeClpHost } from "./clp-host.js";
 
 const SESSION_ID = "session-1";
 
-test("completes CLP v2.0 lifecycle and serializes the complete public API", async (context) => {
+test("completes CLP v2.1 lifecycle and serializes the complete public API", async (context) => {
   const host = await FakeClpHost.start();
   context.after(() => host.close());
   const client = await connectClient(host);
@@ -291,6 +291,132 @@ test("rejects unsupported local operations before they reach the host", async (c
   assert.deepEqual(await close, reason);
 });
 
+test("coalesces presentation packets and reports their asynchronous status", async (context) => {
+  const host = await FakeClpHost.start();
+  context.after(() => host.close());
+  const client = await connectClient(host);
+
+  const first = client.presentScene([
+    { node: "node-1" as NodeHandle, properties: { x: 10, y: 20 } },
+  ]);
+  const second = client.presentScene([
+    { node: "node-1" as NodeHandle, properties: { x: 30, y: 40 } },
+  ]);
+  const explicit = client.presentSceneWithId("application-frame-3", [
+    { node: "node-1" as NodeHandle, properties: { x: 50, y: 60 } },
+    { node: "node-2" as NodeHandle, properties: { width: 80, height: 24 } },
+  ]);
+  assert.equal(explicit, undefined);
+  assert.notEqual(first, second);
+
+  assert.deepEqual(await host.nextJson(), {
+    type: "present_scene",
+    presentation_id: "application-frame-3",
+    updates: [
+      { node: "node-1", properties: { x: 50, y: 60 } },
+      { node: "node-2", properties: { width: 80, height: 24 } },
+    ],
+  });
+  await host.sendJson({
+    type: "presentation_status",
+    session_id: SESSION_ID,
+    presentation_id: "application-frame-3",
+    status: "presented",
+  });
+  assert.deepEqual(await client.nextNotification(), {
+    kind: "presentation_status",
+    presentation: {
+      presentationId: "application-frame-3",
+      status: "presented",
+    },
+  });
+
+  client.presentSceneWithId("application-frame-4", [
+    { node: "node-1" as NodeHandle, properties: { x: 70 } },
+  ]);
+  assert.deepEqual(await host.nextJson(), {
+    type: "present_scene",
+    presentation_id: "application-frame-4",
+    updates: [{ node: "node-1", properties: { x: 70 } }],
+  });
+  await host.sendJson({
+    type: "presentation_status",
+    session_id: SESSION_ID,
+    presentation_id: "application-frame-4",
+    status: "rejected",
+    code: "invalid_node_change",
+    message: "node-1 has intrinsic text bounds that cannot be set directly",
+  });
+  assert.deepEqual(await client.nextNotification(), {
+    kind: "presentation_status",
+    presentation: {
+      presentationId: "application-frame-4",
+      status: "rejected",
+      code: "invalid_node_change",
+      message: "node-1 has intrinsic text bounds that cannot be set directly",
+    },
+  });
+
+  assert.throws(
+    () => client.presentSceneWithId("", [{ node: "node-1" as NodeHandle, properties: { x: 1 } }]),
+    InvalidInputError,
+  );
+  assert.throws(
+    () =>
+      client.presentScene([
+        { node: "node-1" as NodeHandle, properties: { x: 1 } },
+        { node: "node-1" as NodeHandle, properties: { y: 2 } },
+      ]),
+    InvalidInputError,
+  );
+});
+
+test("reconnects once to a CLP v2.0 host without the presentation capability", async (context) => {
+  const host = await FakeClpHost.start();
+  context.after(() => host.close());
+
+  const connecting = Client.connect(host.endpoint, "test-token");
+  assert.deepEqual(await host.nextJson(), {
+    type: "hello",
+    protocol: { major: 2, minor: 1 },
+    token: "test-token",
+    capabilities: [...ALL_CAPABILITIES],
+  });
+  await host.sendJson({
+    type: "error",
+    code: "unsupported_version",
+    message: "CLP v2.1 is unavailable",
+  });
+
+  const legacyCapabilities = [...ALL_CAPABILITIES].filter(
+    (capability) => capability !== "presentation",
+  );
+  assert.deepEqual(await host.nextJson(), {
+    type: "hello",
+    protocol: { major: 2, minor: 0 },
+    token: "test-token",
+    capabilities: legacyCapabilities,
+  });
+  await host.sendJson({
+    type: "init",
+    protocol: { major: 2, minor: 0 },
+    session_id: SESSION_ID,
+    capabilities: legacyCapabilities,
+    context: { arguments: [], initial_commands: [] },
+  });
+  assert.deepEqual(await host.nextJson(), { type: "init_complete" });
+  await host.sendJson({ type: "start", session_id: SESSION_ID });
+  assert.deepEqual(await host.nextJson(), { type: "started" });
+
+  const client = await connecting;
+  assert.deepEqual(client.session.protocolVersion, { major: 2, minor: 0 });
+  assert.equal(client.hasCapability("presentation"), false);
+  assert.throws(
+    () => client.presentScene([{ node: "node-1" as NodeHandle, properties: { x: 1 } }]),
+    CapabilityNotGrantedError,
+  );
+});
+
 test("surfaces command errors and reports a session-scoped program fault", async (context) => {
   const host = await FakeClpHost.start();
   context.after(() => host.close());
@@ -368,13 +494,13 @@ async function connectClient(
   const connecting = Client.connect(host.endpoint, "test-token", capabilities);
   assert.deepEqual(await host.nextJson(), {
     type: "hello",
-    protocol: { major: 2, minor: 0 },
+    protocol: { major: 2, minor: 1 },
     token: "test-token",
     capabilities: [...capabilities],
   });
   const init = {
     type: "init",
-    protocol: { major: 2, minor: 0 },
+    protocol: { major: 2, minor: 1 },
     session_id: SESSION_ID,
     capabilities: [...capabilities],
     context: {
