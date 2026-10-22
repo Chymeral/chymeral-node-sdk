@@ -7,7 +7,7 @@
 <p align="center">
   <a href="https://github.com/Chymeral/chymeral-node-sdk/actions/workflows/ci.yml"><img src="https://github.com/Chymeral/chymeral-node-sdk/actions/workflows/ci.yml/badge.svg" alt="SDK quality checks"></a>
   <a href="https://www.npmjs.com/package/@chymeral/node-sdk"><img src="https://img.shields.io/npm/v/%40chymeral%2Fnode-sdk.svg" alt="npm version"></a>
-  <a href="https://github.com/Chymeral/chymeral-node-sdk/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Chymeral/chymeral-node-sdk.svg?v=1.0.1" alt="MIT License"></a>
+  <a href="https://github.com/Chymeral/chymeral-node-sdk/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Chymeral/chymeral-node-sdk.svg?v=1.5.0" alt="MIT License"></a>
 </p>
 
 > Official Node.js and TypeScript client SDK for the Chymeral Link Protocol
@@ -19,18 +19,18 @@ library: it does not create a separate window, load into the host process, or
 make JavaScript and TypeScript privileged languages in the Chymeral ecosystem.
 
 The SDK presents idiomatic camelCase TypeScript APIs while serializing the CLP
-wire vocabulary internally. The published `1.0.1` package implements public
-CLP v2.0; this development source also contains the unreleased CLP v2.1
-frame-presentation API targeted for package `2.0.0`. It has no runtime npm
-dependencies, native addons, or foreign-function interface.
+wire vocabulary internally. The published `1.5.0` package implements public
+CLP v2.1, including frame presentation and application window metadata. It
+retains a one-time v2.0 fallback and has no runtime npm dependencies, native
+addons, or foreign-function interface.
 
 ## At a glance
 
 | Topic                | Current contract                                |
 | -------------------- | ----------------------------------------------- |
 | npm package          | `@chymeral/node-sdk`                            |
-| Published package    | `1.0.1`, stable CLP `v2.0` API                  |
-| Development target   | `2.0.0`, unreleased CLP `v2.1` API              |
+| Published package    | `1.5.0`, stable CLP `v2.1` API                  |
+| Compatibility        | One-time fallback to a CLP `v2.0` host          |
 | Runtime              | Node.js `22` or newer                           |
 | Platforms            | Linux and Windows                               |
 | Module format        | ESM only                                        |
@@ -39,9 +39,8 @@ dependencies, native addons, or foreign-function interface.
 
 This repository is the source of the first Node SDK. Its package version is
 independent from both Chymeral and CLP versions: compatibility is negotiated at
-connection time. The `1.x` line is the stable public API and deliberately
-provides no provisional CLP v1.x aliases. The source-tree v2.1 API is not
-published to npm yet.
+connection time. The `1.5.x` line is the current stable public API and
+deliberately provides no provisional CLP v1.x aliases.
 
 ## What it provides
 
@@ -54,8 +53,9 @@ published to npm yet.
   timing, resize, delivery-pressure, and closing notifications.
 - Session-owned RGBA8 and animated GIF uploads, including CLP binary-frame
   fragmentation and ordered command delivery.
-- Coalesced frame-presentation packets for bounded transient geometry in the
-  unreleased CLP v2.1 development contract.
+- Coalesced CLP v2.1 frame-presentation packets for bounded transient geometry.
+- Session-owned CLP v2.1 native application titles and bounded static RGBA8
+  icons.
 - Opaque TypeScript `NodeHandle`, `ImageHandle`, and `SessionId` brands.
 - A live conformance client and deterministic protocol tests that do not require
   a graphical window.
@@ -63,8 +63,8 @@ published to npm yet.
 ## Requirements
 
 - Node.js `22` or newer.
-- A Chymeral release that supports CLP v2.0. The development-only presentation
-  example additionally requires an M23 CLP v2.1 host.
+- Chymeral `1.5.0` or newer for CLP v2.1 presentation and window metadata. A
+  v2.0-only host remains supported through the documented capability fallback.
 - A program launched from the shell inside that Chymeral window, so it inherits
   `CHYMERAL_CLP_ENDPOINT` and `CHYMERAL_CLP_TOKEN`.
 
@@ -165,16 +165,17 @@ available for controlled launchers and tests; ordinary applications should use
 Request only the capabilities an application needs, then inspect the negotiated
 result with `client.hasCapability()`.
 
-| Capability      | Enables                                                         |
-| --------------- | --------------------------------------------------------------- |
-| `scene`         | Retained nodes, hierarchy, layers, and mutation                 |
-| `images`        | Session-owned RGBA8 and GIF uploads                             |
-| `input`         | Raw keyboard, pointer, scroll, focus, terminal, and scene input |
-| `timing`        | `tick` and `frame` notifications                                |
-| `overlap`       | Direct overlap queries and transition events                    |
-| `external_drop` | Incoming desktop-file drops on supported backends               |
-| `text`          | Intrinsic terminal-cell text nodes                              |
-| `presentation`  | **Unreleased CLP v2.1:** coalesced frame-paced geometry packets |
+| Capability        | Enables                                                         |
+| ----------------- | --------------------------------------------------------------- |
+| `scene`           | Retained nodes, hierarchy, layers, and mutation                 |
+| `images`          | Session-owned RGBA8 and GIF uploads                             |
+| `input`           | Raw keyboard, pointer, scroll, focus, terminal, and scene input |
+| `timing`          | `tick` and `frame` notifications                                |
+| `overlap`         | Direct overlap queries and transition events                    |
+| `external_drop`   | Incoming desktop-file drops on supported backends               |
+| `text`            | Intrinsic terminal-cell text nodes                              |
+| `presentation`    | CLP v2.1 coalesced frame-paced geometry packets                 |
+| `window_metadata` | CLP v2.1 session-owned native title and static icon claim       |
 
 `subscribe()` accepts `raw_input`, `terminal`, and `timing`. Notifications
 can be consumed with `nextNotification()`, `tryNextNotification()`, or the
@@ -207,7 +208,7 @@ atomic patch; `removeNode()` removes a node and all descendants.
 an opaque `ImageHandle`. Resources belong to the creating session and cannot
 be shared across sessions. Remove unreferenced resources with `removeImage()`.
 
-## Frame-paced presentation (unreleased CLP v2.1)
+## Frame-paced presentation (CLP v2.1)
 
 Use `presentScene()` for the newest transient geometry, such as a draggable
 parent and a sibling scrollbar thumb. It is not an asynchronous replacement for
@@ -236,8 +237,47 @@ interaction changes on `setNode()`.
 
 `Client.connect()` first requests CLP v2.1. If a v2.0-only host explicitly
 rejects the lifecycle request, it reconnects once using v2.0 without
-`presentation`. `presentScene()` then throws `CapabilityNotGrantedError`; it
-never expands a packet into individual `setNode()` calls.
+`presentation` or `window_metadata`. `presentScene()` and
+`setWindowMetadata()` then throw `CapabilityNotGrantedError`; it never expands
+a packet into individual `setNode()` calls.
+
+## Application window metadata (CLP v2.1)
+
+Request `window_metadata` when an application should identify itself in the
+native Chymeral window. `setWindowMetadata()` accepts a partial patch: omit a
+property to preserve it, and use `null` to clear it. At least one property must
+be supplied.
+
+```ts
+const client = await Client.connectFromEnv(["images", "window_metadata"]);
+const icon = await client.uploadImage({
+  kind: "rgba8",
+  width: 1,
+  height: 1,
+  pixels: Uint8Array.from([37, 99, 235, 255]),
+});
+
+const status = await client.setWindowMetadata({
+  title: "Example editor",
+  icon,
+});
+console.log(`dynamic icon support: ${status.iconSupported}`);
+
+// The icon remains selected because this patch omits it.
+await client.setWindowMetadata({ title: "Example editor — project" });
+```
+
+Titles are verbatim, nonempty, control-free Unicode limited to 256 UTF-8
+bytes. An icon is a session-owned static RGBA8 `ImageHandle`, at most 256 × 256
+pixels and 256 KiB; GIFs, paths, URLs, and foreign handles are rejected.
+`removeImage()` rejects a handle while it is selected as the session icon.
+
+Every session retains a claim, and the newest live nonempty claim is visible.
+Clearing or closing the active session restores the newest remaining claim,
+then Chymeral's terminal-derived title and bundled icon when none remain.
+`client.session.context.windowMetadata?.iconSupported` reports backend icon
+support. Native Wayland can apply application titles but reports `false` for
+portable dynamic icons; the metadata claim remains valid in that case.
 
 ## Interaction, overlap, and external drops
 
@@ -326,19 +366,29 @@ The conformance client needs an active Chymeral terminal session:
 npm run example:conformance
 npm run example:conformance -- --manual
 npm run example:presentation
+npm run example:window-metadata
 ```
 
 The default run verifies lifecycle, subscriptions, timing, RGBA8/GIF image
-upload/removal, text metrics, alpha contact, overlap, and session-only closure.
-The manual mode additionally presents a layered scene for pointer, alpha,
-passthrough, GIF, and external-drop checks.
+upload/removal, text metrics, alpha contact, overlap, session-owned window
+metadata when granted, and session-only closure. The manual mode additionally
+presents a layered scene for pointer, alpha, passthrough, GIF, and external-drop
+checks.
 
-`example:presentation` is the M23 development probe. With an M23 Chymeral
-build, click its blue panel once to focus it, move the pointer, scroll, resize,
+`example:presentation` is the CLP v2.1 presentation probe. With Chymeral
+`1.5.0` or newer, click its blue panel once to focus it, move the pointer, scroll, resize,
 then press `b` for a 180-update 60 Hz burst and `q` for its observed
 application-submit-to-host-status summary. Start the host with
 `CHYMERAL_PRESENTATION_TRACE=1` for separately labelled host-stage timing; the
 probe does not claim physical input-to-photon timing.
+
+`example:window-metadata` is the CLP v2.1 visual probe. It uses a session-owned
+static icon and native title, then waits for interaction: click its blue panel,
+press `t` to replace only the title while preserving the icon, `c` to clear
+both fields and restore Chymeral's terminal-derived fallback, `r` to restore
+both fields, and `q` to close only the session. Windows and supported Linux
+backends report dynamic icon support; native Wayland correctly reports `false`
+while still applying the title.
 
 The host repository maintains a versioned,
 language-neutral [CLP v2.0 fixture corpus](https://github.com/Chymeral/chymeral/tree/main/protocol/fixtures/v2.0).
@@ -348,9 +398,10 @@ through the public client and an independent fake host. Update both files only
 from a reviewed core revision. The corpus complements, rather than replaces,
 this package's focused fake-host tests and live conformance executable.
 
-The development tree also vendors the byte-checked
-[CLP v2.1 presentation fixture corpus](https://github.com/Chymeral/chymeral/tree/main/protocol/fixtures/v2.1).
-It verifies public packet serialization, status decoding, and v2.0 fallback.
+This package also vendors the byte-checked
+[CLP v2.1 fixture corpus](https://github.com/Chymeral/chymeral/tree/main/protocol/fixtures/v2.1).
+It verifies public presentation and window-metadata serialization, status
+decoding, and v2.0 fallback.
 
 GitHub Actions runs the repository quality checks on Linux and Windows with
 Node.js 22 and 24; `npm run ci` includes the vendored corpus replay.
@@ -369,8 +420,8 @@ Node.js 22 and 24; `npm run ci` includes the vendored corpus replay.
   — host configuration, terminal behavior, and runtime semantics.
 - [CLP v2.0 fixture corpus](https://github.com/Chymeral/chymeral/tree/main/protocol/fixtures/v2.0)
   — portable, language-neutral frame vectors for SDK conformance work.
-- [CLP v2.1 presentation fixture corpus](https://github.com/Chymeral/chymeral/tree/main/protocol/fixtures/v2.1)
-  — development vectors for the M23 frame-presentation capability.
+- [CLP v2.1 fixture corpus](https://github.com/Chymeral/chymeral/tree/main/protocol/fixtures/v2.1)
+  — versioned vectors for frame presentation and application window metadata.
 - [Chymeral Rust SDK](https://github.com/Chymeral/chymeral-rust-sdk) — the
   separate Rust reference and conformance client, published on
   [crates.io](https://crates.io/crates/chymeral-rust-sdk).

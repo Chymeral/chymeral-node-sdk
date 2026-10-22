@@ -28,6 +28,9 @@ export {
   MAX_PRESENTATION_PACKET_BYTES,
   MAX_PRESENTATION_UPDATES,
   MAX_STATIC_IMAGE_BYTES,
+  MAX_WINDOW_ICON_BYTES,
+  MAX_WINDOW_ICON_DIMENSION,
+  MAX_WINDOW_TITLE_BYTES,
   TOKEN_ENV,
 } from "./types.js";
 export type {
@@ -78,4 +81,7 @@ export type {
   TextStyle,
   TextWeight,
   Vec2,
+  WindowMetadataPatch,
+  WindowMetadataStatus,
+  WindowMetadataSupport,
 } from "./types.js";

@@ -88,6 +88,25 @@ replays every vector through its public asynchronous API and an independent
 fake host in the Linux/Windows Node.js 22 and 24 matrix. It does not depend on
 host code or network retrieval during CI.
 
+M23–M24 add CLP v2.1 presentation and application window metadata without
+weakening the ordered promise-based command path. The public TypeScript
+metadata patch uses idiomatic optional properties: omission preserves a field
+and `null` clears it. The one-time v2.0 retry removes both v2.1-only
+capabilities, while the vendored v2.1 fixture replay verifies presentation and
+title/icon metadata through the public API and an independent fake host.
+
+## M25 release integration
+
+The `1.5.0` package consolidates the M23 and M24 API as the stable Node.js and
+TypeScript binding for CLP v2.1. It keeps the deliberate one-time v2.0 retry
+without expanding a presentation packet into individual `setNode()` calls.
+`npm run ci`, package dry-run inspection, and the Linux/Windows Node.js 22 and
+24 matrix cover the built ESM package, fixture replay, type checks, and tests.
+The vendored v2.1 fixture snapshot and SHA-256 manifest match the core and Rust
+SDK snapshots byte for byte. Live presentation and metadata probes passed
+against Chymeral `1.5.0` on Windows, Linux/X11, and native Wayland; the latter
+correctly reports dynamic application icons unsupported while applying titles.
+
 ## Intentional boundaries
 
 - This package is a CLP client, not a terminal, widget toolkit, graphics engine

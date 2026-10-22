@@ -26,6 +26,7 @@ test("completes CLP v2.1 lifecycle and serializes the complete public API", asyn
   assert.deepEqual(client.session.context, {
     arguments: ["--from-test"],
     initialCommands: [{ name: "open", arguments: ["sample"] }],
+    windowMetadata: { iconSupported: true },
   });
   (client.session.capabilities as Set<Capability>).clear();
   (client.session.context.arguments as string[]).push("mutated");
@@ -69,6 +70,44 @@ test("completes CLP v2.1 lifecycle and serializes the complete public API", asyn
   });
   const image = await upload;
   assert.equal(image, "image-1");
+
+  const metadata = client.setWindowMetadata({ title: "Node SDK test", icon: image });
+  const metadataEnvelope = await nextCommand(host, {
+    op: "set_window_metadata",
+    title: "Node SDK test",
+    icon: "image-1",
+  });
+  await host.sendJson({
+    type: "result",
+    request_id: metadataEnvelope.requestId,
+    result: { kind: "window_metadata", icon_supported: true },
+  });
+  assert.deepEqual(await metadata, { iconSupported: true });
+
+  const titleOnly = client.setWindowMetadata({ title: "Node SDK refreshed" });
+  const titleOnlyEnvelope = await nextCommand(host, {
+    op: "set_window_metadata",
+    title: "Node SDK refreshed",
+  });
+  await host.sendJson({
+    type: "result",
+    request_id: titleOnlyEnvelope.requestId,
+    result: { kind: "window_metadata", icon_supported: true },
+  });
+  assert.deepEqual(await titleOnly, { iconSupported: true });
+
+  const clearMetadata = client.setWindowMetadata({ title: null, icon: null });
+  const clearMetadataEnvelope = await nextCommand(host, {
+    op: "set_window_metadata",
+    title: null,
+    icon: null,
+  });
+  await host.sendJson({
+    type: "result",
+    request_id: clearMetadataEnvelope.requestId,
+    result: { kind: "window_metadata", icon_supported: true },
+  });
+  assert.deepEqual(await clearMetadata, { iconSupported: true });
 
   const createImage = client.createNode(
     {
@@ -268,6 +307,10 @@ test("rejects unsupported local operations before they reach the host", async (c
     CapabilityNotGrantedError,
   );
   await assert.rejects(
+    client.setWindowMetadata({ title: "unavailable" }),
+    CapabilityNotGrantedError,
+  );
+  await assert.rejects(
     client.createNode({
       kind: "rectangle",
       properties: { x: 0, y: 0, width: 1, height: 1, overlapEnabled: true },
@@ -361,6 +404,8 @@ test("coalesces presentation packets and reports their asynchronous status", asy
     () => client.presentSceneWithId("", [{ node: "node-1" as NodeHandle, properties: { x: 1 } }]),
     InvalidInputError,
   );
+  await assert.rejects(client.setWindowMetadata({}), InvalidInputError);
+  await assert.rejects(client.setWindowMetadata({ title: "\n" }), InvalidInputError);
   assert.throws(
     () =>
       client.presentScene([
@@ -389,7 +434,7 @@ test("reconnects once to a CLP v2.0 host without the presentation capability", a
   });
 
   const legacyCapabilities = [...ALL_CAPABILITIES].filter(
-    (capability) => capability !== "presentation",
+    (capability) => capability !== "presentation" && capability !== "window_metadata",
   );
   assert.deepEqual(await host.nextJson(), {
     type: "hello",
@@ -411,8 +456,13 @@ test("reconnects once to a CLP v2.0 host without the presentation capability", a
   const client = await connecting;
   assert.deepEqual(client.session.protocolVersion, { major: 2, minor: 0 });
   assert.equal(client.hasCapability("presentation"), false);
+  assert.equal(client.hasCapability("window_metadata"), false);
   assert.throws(
     () => client.presentScene([{ node: "node-1" as NodeHandle, properties: { x: 1 } }]),
+    CapabilityNotGrantedError,
+  );
+  await assert.rejects(
+    client.setWindowMetadata({ title: "unavailable" }),
     CapabilityNotGrantedError,
   );
 });
@@ -491,21 +541,25 @@ async function connectClient(
   capabilities: Iterable<Capability> = ALL_CAPABILITIES,
   fragmentInit = false,
 ): Promise<Client> {
-  const connecting = Client.connect(host.endpoint, "test-token", capabilities);
+  const requestedCapabilities = [...capabilities];
+  const connecting = Client.connect(host.endpoint, "test-token", requestedCapabilities);
   assert.deepEqual(await host.nextJson(), {
     type: "hello",
     protocol: { major: 2, minor: 1 },
     token: "test-token",
-    capabilities: [...capabilities],
+    capabilities: requestedCapabilities,
   });
   const init = {
     type: "init",
     protocol: { major: 2, minor: 1 },
     session_id: SESSION_ID,
-    capabilities: [...capabilities],
+    capabilities: requestedCapabilities,
     context: {
       arguments: ["--from-test"],
       initial_commands: [{ name: "open", arguments: ["sample"] }],
+      ...(requestedCapabilities.includes("window_metadata")
+        ? { window_metadata: { icon_supported: true } }
+        : {}),
     },
   };
   if (fragmentInit) {

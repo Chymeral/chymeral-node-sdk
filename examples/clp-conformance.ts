@@ -23,6 +23,18 @@ async function main(): Promise<void> {
       height: 1,
       pixels: Uint8Array.from([30, 150, 240, 255]),
     });
+    if (client.hasCapability("window_metadata")) {
+      const initial = await client.setWindowMetadata({
+        title: "Chymeral Node SDK conformance",
+        icon: image,
+      });
+      const support = client.session.context.windowMetadata;
+      if (support !== undefined && initial.iconSupported !== support.iconSupported) {
+        throw new Error("window metadata support disagreed with its command result");
+      }
+      await client.setWindowMetadata({ title: "Chymeral Node SDK conformance refreshed" });
+      await client.setWindowMetadata({ title: null, icon: null });
+    }
     const visual = await client.createNode(
       {
         kind: "image",

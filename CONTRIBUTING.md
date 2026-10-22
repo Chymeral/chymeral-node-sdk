@@ -41,6 +41,7 @@ For a live host check, start Chymeral, open its terminal, and run:
 npm run example:conformance
 npm run example:conformance -- --manual
 npm run example:presentation
+npm run example:window-metadata
 ```
 
 The manual scenario is the required visual check for a change that affects
@@ -54,10 +55,16 @@ resize, and the `b` burst, then compare its summary with an optional
 `CHYMERAL_PRESENTATION_TRACE=1` host trace. Do not describe either value as
 physical input-to-photon latency.
 
+The window-metadata probe is required for a CLP v2.1 title/icon change. Confirm
+title-only preservation, explicit clearing, session-only closure, and the
+backend's reported icon-support state on every affected platform.
+
 ## Public API and protocol compatibility
 
-Published `1.0.x` is a typed asynchronous binding for CLP v2.0. The source
-tree's v2.1 presentation work targets the breaking `2.0.0` line. A change to a
+Published `1.5.x` is a typed asynchronous binding for CLP v2.1 with one-time
+v2.0 fallback. The earlier `1.0.x` line implements CLP v2.0; the future
+breaking `2.0.0` line is reserved for the separately validated M26 platform
+expansion. A change to a
 public export, type, serialization rule, lifecycle behavior, error, Node.js
 baseline, or supported platform must include:
 
@@ -73,7 +80,7 @@ Do not add a network download or a dependency on the Chymeral host to this
 package's ordinary CI.
 
 For a CLP v2.1 change, also update the reviewed
-[v2.1 presentation corpus](https://github.com/Chymeral/chymeral/tree/main/protocol/fixtures/v2.1)
+[v2.1 fixture corpus](https://github.com/Chymeral/chymeral/tree/main/protocol/fixtures/v2.1)
 and its vendored `fixtures/clp/v2.1` snapshot together. Check both hashes and
 keep the v2.0 replay to prove one-time fallback compatibility.
 

@@ -28,6 +28,15 @@ export const MAX_PRESENTATION_PACKET_BYTES = 64 * 1024;
 /** Maximum UTF-8 byte length of a presentation identifier. */
 export const MAX_PRESENTATION_ID_BYTES = 128;
 
+/** Maximum UTF-8 byte length of an application-provided window title. */
+export const MAX_WINDOW_TITLE_BYTES = 256;
+
+/** Maximum width or height of a CLP application window icon. */
+export const MAX_WINDOW_ICON_DIMENSION = 256;
+
+/** Maximum byte length of a static RGBA8 application window icon. */
+export const MAX_WINDOW_ICON_BYTES = 256 * 1024;
+
 /** A CLP protocol version. */
 export interface ProtocolVersion {
   readonly major: number;
@@ -44,6 +53,7 @@ export const ALL_CAPABILITIES = [
   "external_drop",
   "text",
   "presentation",
+  "window_metadata",
 ] as const;
 
 /** A capability name accepted by CLP v2.1. */
@@ -76,6 +86,29 @@ export interface StartupCommand {
 export interface InitContext {
   readonly arguments: readonly string[];
   readonly initialCommands: readonly StartupCommand[];
+  /** Window-metadata support exposed by a CLP v2.1 host, when negotiated. */
+  readonly windowMetadata?: WindowMetadataSupport;
+}
+
+/** Host-specific support for application window metadata. */
+export interface WindowMetadataSupport {
+  /** Whether the active window backend can apply dynamic application icons. */
+  readonly iconSupported: boolean;
+}
+
+/** A partial application window-metadata update.
+ *
+ * Omit a property to retain its current value. Set it to `null` to clear it.
+ */
+export interface WindowMetadataPatch {
+  readonly title?: string | null;
+  readonly icon?: ImageHandle | null;
+}
+
+/** Result of a successful application window-metadata update. */
+export interface WindowMetadataStatus {
+  /** Whether the host can apply the selected icon on its active backend. */
+  readonly iconSupported: boolean;
 }
 
 /** Immutable data negotiated before the session enters the running state. */

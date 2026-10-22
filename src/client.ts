@@ -19,6 +19,7 @@ import {
   MAX_PRESENTATION_PACKET_BYTES,
   MAX_PRESENTATION_UPDATES,
   MAX_STATIC_IMAGE_BYTES,
+  MAX_WINDOW_TITLE_BYTES,
   TOKEN_ENV,
   type Capability,
   type CloseReason,
@@ -59,6 +60,9 @@ import {
   type TextNodeProperties,
   type TextStyle,
   type Vec2,
+  type WindowMetadataPatch,
+  type WindowMetadataStatus,
+  type WindowMetadataSupport,
 } from "./types.js";
 
 const MAX_PENDING_NOTIFICATIONS = 4_096;
@@ -125,6 +129,9 @@ export class Client {
           name: command.name,
           arguments: [...command.arguments],
         })),
+        ...(sessionInfo.context.windowMetadata === undefined
+          ? {}
+          : { windowMetadata: { ...sessionInfo.context.windowMetadata } }),
       },
     };
     void this.pump();
@@ -162,13 +169,15 @@ export class Client {
         error instanceof HostError &&
         (error.code === "unsupported_version" || error.code === "invalid_message")
       ) {
-        // CLP v2.0 hosts predate the presentation capability and can reject
-        // that enum value before they reach version negotiation. Retry once
-        // with the frozen v2.0 capability set.
+        // CLP v2.0 hosts predate the v2.1-only presentation and window
+        // metadata capabilities and can reject either enum value before they
+        // reach version negotiation. Retry once with the frozen v2.0 set.
         return Client.connectOnce(
           endpoint,
           token,
-          capabilities.filter((capability) => capability !== "presentation"),
+          capabilities.filter(
+            (capability) => capability !== "presentation" && capability !== "window_metadata",
+          ),
           CLP_PROTOCOL_V2_0,
         );
       }
@@ -249,6 +258,9 @@ export class Client {
           name: command.name,
           arguments: [...command.arguments],
         })),
+        ...(this.sessionInfo.context.windowMetadata === undefined
+          ? {}
+          : { windowMetadata: { ...this.sessionInfo.context.windowMetadata } }),
       },
     };
   }
@@ -412,6 +424,22 @@ export class Client {
     await this.expectAcknowledged(
       this.command({ op: "remove_image", image: validateImageHandle(image, "image") }),
     );
+  }
+
+  /**
+   * Updates this session's application window title and/or icon claim.
+   *
+   * Omitted fields preserve their current values; `null` clears a field. An
+   * icon must be a session-owned, static RGBA8 image uploaded through this
+   * client. Hosts report whether their active window backend can apply icons.
+   */
+  public async setWindowMetadata(metadata: WindowMetadataPatch): Promise<WindowMetadataStatus> {
+    this.requireCapability("window_metadata");
+    const result = await this.command(serializeWindowMetadataPatch(metadata));
+    if (stringField(result, "kind", "command result") !== "window_metadata") {
+      throw unexpectedCommandResult("window_metadata", result);
+    }
+    return { iconSupported: booleanField(result, "icon_supported", "command result") };
   }
 
   /** Returns whether any enabled same-session node overlaps `node`. */
@@ -1097,6 +1125,10 @@ function decodePresentationStatus(message: Record<string, unknown>): {
 
 function decodeInitContext(value: unknown): InitContext {
   const context = record(value, "init.context");
+  const windowMetadata =
+    context.window_metadata === undefined
+      ? undefined
+      : decodeWindowMetadataSupport(context.window_metadata, "init.context.window_metadata");
   return {
     arguments: arrayField(context, "arguments", "init.context").map((argument, index) =>
       stringValue(argument, `init.context.arguments[${index}]`),
@@ -1119,7 +1151,13 @@ function decodeInitContext(value: unknown): InitContext {
         };
       },
     ),
+    ...(windowMetadata === undefined ? {} : { windowMetadata }),
   };
+}
+
+function decodeWindowMetadataSupport(value: unknown, context: string): WindowMetadataSupport {
+  const support = record(value, context);
+  return { iconSupported: booleanField(support, "icon_supported", context) };
 }
 
 function decodeProtocolVersion(value: unknown, context: string): ProtocolVersion {
@@ -1454,6 +1492,40 @@ function validateNodeHandle(value: NodeHandle, context: string): NodeHandle {
 
 function validateImageHandle(value: ImageHandle, context: string): ImageHandle {
   return validateHandle(value, "image", context) as ImageHandle;
+}
+
+function serializeWindowMetadataPatch(metadata: WindowMetadataPatch): Record<string, unknown> {
+  if (metadata === null || typeof metadata !== "object" || Array.isArray(metadata)) {
+    throw new InvalidInputError("metadata must be an object");
+  }
+
+  const serialized: Record<string, unknown> = { op: "set_window_metadata" };
+  if (metadata.title !== undefined) {
+    serialized.title =
+      metadata.title === null ? null : validateWindowTitle(metadata.title, "metadata.title");
+  }
+  if (metadata.icon !== undefined) {
+    serialized.icon =
+      metadata.icon === null ? null : validateImageHandle(metadata.icon, "metadata.icon");
+  }
+  if (Object.keys(serialized).length === 1) {
+    throw new InvalidInputError("window metadata must update a title and/or icon");
+  }
+  return serialized;
+}
+
+function validateWindowTitle(value: string, context: string): string {
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    Buffer.byteLength(value, "utf8") > MAX_WINDOW_TITLE_BYTES ||
+    /[\u0000-\u001f\u007f-\u009f]/u.test(value)
+  ) {
+    throw new InvalidInputError(
+      `${context} must contain 1 to ${MAX_WINDOW_TITLE_BYTES} UTF-8 bytes without control characters`,
+    );
+  }
+  return value;
 }
 
 function validatePresentationId(value: string, context: string): PresentationId {

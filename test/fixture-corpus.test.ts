@@ -4,7 +4,13 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-import { ALL_CAPABILITIES, Client, CommandError, type NodeHandle } from "../src/index.js";
+import {
+  ALL_CAPABILITIES,
+  Client,
+  CommandError,
+  type Capability,
+  type NodeHandle,
+} from "../src/index.js";
 import { FakeClpHost } from "./clp-host.js";
 
 const FIXTURE_TOKEN = "fixture-token-not-a-secret";
@@ -125,7 +131,7 @@ test("replays the vendored canonical CLP v2.0 fixture corpus through the public 
   await replayDeliveryErrorsAndFaultClose(corpus, context);
 });
 
-test("replays the vendored canonical CLP v2.1 presentation fixture through the public client", async (context) => {
+test("replays the vendored canonical CLP v2.1 fixture corpus through the public client", async (context) => {
   const corpus = await loadFixtureCorpus(FIXTURE_V2_1_DIRECTORY, { major: 2, minor: 1 });
   const host = await FakeClpHost.start();
   context.after(() => host.close());
@@ -169,7 +175,54 @@ test("replays the vendored canonical CLP v2.1 presentation fixture through the p
   await transcript.sendHostJson(host);
   assert.deepEqual(await close, { kind: "client_requested" });
   transcript.assertComplete();
+
+  await replayWindowMetadata(corpus, context);
 });
+
+async function replayWindowMetadata(
+  corpus: FixtureCorpus,
+  context: test.TestContext,
+): Promise<void> {
+  const host = await FakeClpHost.start();
+  context.after(() => host.close());
+  const transcript = new FixtureTranscript(vector(corpus, "application-window-metadata").frames);
+  const client = await connectV21FixtureClient(host, transcript, ["images", "window_metadata"]);
+
+  assert.equal(client.hasCapability("window_metadata"), true);
+  assert.deepEqual(client.session.context.windowMetadata, { iconSupported: true });
+
+  const imageUpload = client.uploadImage({
+    kind: "rgba8",
+    width: 1,
+    height: 1,
+    pixels: new Uint8Array([0xff, 0x7f, 0x00, 0xff]),
+  });
+  await transcript.expectClientJson(host);
+  await transcript.expectClientBinary(host);
+  await transcript.sendHostJson(host);
+  const image = await imageUpload;
+
+  const initial = client.setWindowMetadata({ title: "Fixture metadata", icon: image });
+  await transcript.expectClientJson(host);
+  await transcript.sendHostJson(host);
+  assert.deepEqual(await initial, { iconSupported: true });
+
+  const titleOnly = client.setWindowMetadata({ title: "Refreshed fixture metadata" });
+  await transcript.expectClientJson(host);
+  await transcript.sendHostJson(host);
+  assert.deepEqual(await titleOnly, { iconSupported: true });
+
+  const clear = client.setWindowMetadata({ title: null, icon: null });
+  await transcript.expectClientJson(host);
+  await transcript.sendHostJson(host);
+  assert.deepEqual(await clear, { iconSupported: true });
+
+  const close = client.close();
+  await transcript.expectClientJson(host);
+  await transcript.sendHostJson(host);
+  assert.deepEqual(await close, { kind: "client_requested" });
+  transcript.assertComplete();
+}
 
 async function replayLifecycle(corpus: FixtureCorpus, context: test.TestContext): Promise<void> {
   const host = await FakeClpHost.start();
@@ -475,8 +528,9 @@ async function connectFixtureClient(
 async function connectV21FixtureClient(
   host: FakeClpHost,
   transcript: FixtureTranscript,
+  capabilities: Iterable<Capability> = ALL_CAPABILITIES,
 ): Promise<Client> {
-  const connecting = Client.connect(host.endpoint, FIXTURE_TOKEN);
+  const connecting = Client.connect(host.endpoint, FIXTURE_TOKEN, capabilities);
   await transcript.expectClientJson(host);
   await transcript.sendHostJson(host);
   await transcript.expectClientJson(host);

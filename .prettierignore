@@ -3,3 +3,4 @@ dist/
 coverage/
 package-lock.json
 fixtures/clp/v2.0/fixtures.json
+fixtures/clp/v2.1/fixtures.json

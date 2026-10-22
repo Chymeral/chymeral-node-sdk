@@ -6,25 +6,33 @@ CLP have independent version lines.
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-10-22
+
 ### Added
 
-- Development CLP v2.1 support for the `presentation` capability,
+- CLP v2.1 support for the `presentation` capability,
   `presentScene()`, `presentSceneWithId()`, presentation value types, and
   `presentation_status` notifications.
 - A live `example:presentation` probe for pointer, scroll, resize, and
   coalescible 60 Hz parent/control presentation traffic.
 - Byte-checked CLP v2.1 fixture replay for accepted and rejected packets.
+- CLP v2.1 support for the `window_metadata` capability,
+  `setWindowMetadata()`, `WindowMetadataPatch`, `WindowMetadataStatus`, and
+  `WindowMetadataSupport`.
+- Byte-checked v2.1 replay for title/icon metadata, field preservation, and
+  explicit clearing.
 
 ### Changed
 
 - `Client.connect()` retries once against a v2.0-only host without
-  `presentation`; presentation packets never silently become `setNode()`
-  calls.
+  `presentation` or `window_metadata`; presentation packets never silently
+  become `setNode()` calls.
 
 ### Compatibility
 
-- These unreleased APIs target package `2.0.0`. Published `1.0.x` remains the
-  stable CLP v2.0 package line.
+- Package `1.5.0` implements CLP v2.1 and retains one-time v2.0 fallback. The
+  earlier `1.0.x` line implements CLP v2.0. The future breaking `2.0.0` line is
+  reserved for the separately validated M26 platform expansion.
 
 ## [1.0.1] - 2026-10-19
 
