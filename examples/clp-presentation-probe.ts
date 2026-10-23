@@ -239,7 +239,7 @@ async function main(): Promise<void> {
     client = await Client.connectFromEnv();
     if (!client.hasCapability("presentation")) {
       throw new Error(
-        "the connected host did not grant CLP v2.1 presentation; run this probe in a Chymeral M23 build",
+        "the connected host did not grant CLP v2.1 presentation; run this probe in Chymeral 1.5.0 or newer",
       );
     }
     await client.subscribe(["raw_input"]);

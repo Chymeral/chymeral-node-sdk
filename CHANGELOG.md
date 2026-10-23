@@ -6,6 +6,12 @@ CLP have independent version lines.
 
 ## [Unreleased]
 
+### Fixed
+
+- Replaced retired M20, M23, and M24 milestone labels in the conformance,
+  presentation, and window-metadata examples with stable CLP v2.1 and
+  Chymeral `1.5.0` wording.
+
 ## [1.5.0] - 2026-10-22
 
 ### Added

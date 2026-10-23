@@ -222,7 +222,7 @@ async function manualInteractionDemo(client: Client): Promise<void> {
     { layer: "overlay" },
   );
 
-  console.log("M20 manual interaction scene is ready.");
+  console.log("CLP v2.1 manual interaction scene is ready.");
   console.log(
     "- Click the blue area or transparent orange-frame center: the blue node receives the event.",
   );

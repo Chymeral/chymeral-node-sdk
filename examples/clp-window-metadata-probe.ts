@@ -117,7 +117,7 @@ async function createProbeNodes(client: Client): Promise<ProbeNodes> {
     {
       kind: "text",
       properties: { x: 16, y: 16 },
-      text: "M24 window metadata probe\nclick here, then t / c / r / q",
+      text: "CLP v2.1 window metadata probe\nclick here, then t / c / r / q",
       style: { color: [255, 255, 255, 255], weight: "bold" },
     },
     { parent: panel.node },
