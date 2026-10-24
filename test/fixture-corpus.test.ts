@@ -8,6 +8,7 @@ import {
   ALL_CAPABILITIES,
   Client,
   CommandError,
+  SceneBatch,
   type Capability,
   type NodeHandle,
 } from "../src/index.js";
@@ -16,6 +17,10 @@ import { FakeClpHost } from "./clp-host.js";
 const FIXTURE_TOKEN = "fixture-token-not-a-secret";
 const FIXTURE_V2_0_DIRECTORY = fileURLToPath(new URL("../fixtures/clp/v2.0/", import.meta.url));
 const FIXTURE_V2_1_DIRECTORY = fileURLToPath(new URL("../fixtures/clp/v2.1/", import.meta.url));
+const FIXTURE_V2_4_DIRECTORY = fileURLToPath(new URL("../fixtures/clp/v2.4/", import.meta.url));
+const V2_1_CAPABILITIES: readonly Capability[] = ALL_CAPABILITIES.filter(
+  (capability) => capability !== "scene_batch",
+);
 
 type FixtureDirection = "client_to_host" | "host_to_client";
 type FixtureKind = "json" | "binary";
@@ -135,7 +140,9 @@ test("replays the vendored canonical CLP v2.1 fixture corpus through the public 
   const corpus = await loadFixtureCorpus(FIXTURE_V2_1_DIRECTORY, { major: 2, minor: 1 });
   const host = await FakeClpHost.start();
   context.after(() => host.close());
-  const transcript = new FixtureTranscript(vector(corpus, "frame-presentation").frames);
+  const transcript = new FixtureTranscript(
+    withClientProtocolMinor(vector(corpus, "frame-presentation").frames, 4),
+  );
   const client = await connectV21FixtureClient(host, transcript);
 
   assert.deepEqual(client.session.protocolVersion, { major: 2, minor: 1 });
@@ -179,13 +186,83 @@ test("replays the vendored canonical CLP v2.1 fixture corpus through the public 
   await replayWindowMetadata(corpus, context);
 });
 
+test("replays the vendored CLP v2.4 scene-batch fixture through the public client", async (context) => {
+  const corpus = await loadFixtureCorpus(FIXTURE_V2_4_DIRECTORY, { major: 2, minor: 4 });
+  const host = await FakeClpHost.start();
+  context.after(() => host.close());
+  const transcript = new FixtureTranscript(vector(corpus, "atomic-scene-batch").frames);
+  const connecting = Client.connect(host.endpoint, FIXTURE_TOKEN, ["scene", "text", "scene_batch"]);
+  await transcript.expectClientJson(host);
+  await transcript.sendHostJson(host);
+  await transcript.expectClientJson(host);
+  await transcript.sendHostJson(host);
+  await transcript.expectClientJson(host);
+  const client = await connecting;
+
+  const batch = client.applySceneBatch(
+    new SceneBatch()
+      .createNode(
+        "panel",
+        {
+          kind: "rectangle",
+          properties: { x: 8, y: 12, width: 240, height: 120, zIndex: 3 },
+          color: [36, 88, 216, 255],
+        },
+        { layer: "overlay" },
+      )
+      .createNode(
+        "label",
+        { kind: "text", properties: { x: 16, y: 24 }, text: "Ready" },
+        { parent: SceneBatch.alias("panel") },
+      )
+      .setNode(SceneBatch.alias("panel"), {
+        properties: { x: 20, clipChildren: true },
+      })
+      .createNode(
+        "temporary",
+        {
+          kind: "empty",
+          properties: { x: 0, y: 0, width: 1, height: 1, visible: false },
+        },
+        { layer: "overlay" },
+      )
+      .removeNode(SceneBatch.alias("temporary")),
+  );
+  await transcript.expectClientJson(host);
+  await transcript.sendHostJson(host);
+  assert.deepEqual(await batch, {
+    nodes: {
+      label: {
+        node: "node-2",
+        textMetrics: { columns: 5, rows: 1, width: 48, height: 20 },
+      },
+      panel: { node: "node-1" },
+    },
+    operations: [
+      { kind: "created", alias: "panel" },
+      { kind: "created", alias: "label" },
+      { kind: "updated" },
+      { kind: "created", alias: "temporary" },
+      { kind: "removed" },
+    ],
+  });
+
+  const close = client.close();
+  await transcript.expectClientJson(host);
+  await transcript.sendHostJson(host);
+  assert.deepEqual(await close, { kind: "client_requested" });
+  transcript.assertComplete();
+});
+
 async function replayWindowMetadata(
   corpus: FixtureCorpus,
   context: test.TestContext,
 ): Promise<void> {
   const host = await FakeClpHost.start();
   context.after(() => host.close());
-  const transcript = new FixtureTranscript(vector(corpus, "application-window-metadata").frames);
+  const transcript = new FixtureTranscript(
+    withClientProtocolMinor(vector(corpus, "application-window-metadata").frames, 4),
+  );
   const client = await connectV21FixtureClient(host, transcript, ["images", "window_metadata"]);
 
   assert.equal(client.hasCapability("window_metadata"), true);
@@ -508,7 +585,7 @@ async function connectFixtureClient(
   const connecting = Client.connect(host.endpoint, FIXTURE_TOKEN);
   assert.deepEqual(await host.nextJson(), {
     type: "hello",
-    protocol: { major: 2, minor: 1 },
+    protocol: { major: 2, minor: 4 },
     token: FIXTURE_TOKEN,
     capabilities: [...ALL_CAPABILITIES],
   });
@@ -528,7 +605,7 @@ async function connectFixtureClient(
 async function connectV21FixtureClient(
   host: FakeClpHost,
   transcript: FixtureTranscript,
-  capabilities: Iterable<Capability> = ALL_CAPABILITIES,
+  capabilities: Iterable<Capability> = V2_1_CAPABILITIES,
 ): Promise<Client> {
   const connecting = Client.connect(host.endpoint, FIXTURE_TOKEN, capabilities);
   await transcript.expectClientJson(host);
@@ -576,6 +653,26 @@ function vector(corpus: FixtureCorpus, id: string): FixtureVector {
     throw new Error(`fixture corpus does not contain vector ${id}`);
   }
   return found;
+}
+
+function withClientProtocolMinor(
+  frames: readonly FixtureFrame[],
+  minor: number,
+): readonly FixtureFrame[] {
+  const copied = frames.map((frame) => ({
+    ...frame,
+    ...(frame.message === undefined ? {} : { message: cloneJson(frame.message) }),
+  }));
+  const hello = copied[0]?.message;
+  if (hello === undefined || hello.type !== "hello") {
+    throw new Error("fixture vector must begin with a JSON hello");
+  }
+  const protocol = hello.protocol;
+  if (protocol === null || typeof protocol !== "object" || Array.isArray(protocol)) {
+    throw new Error("fixture hello must contain a protocol object");
+  }
+  (protocol as JsonObject).minor = minor;
+  return copied;
 }
 
 function requestId(message: JsonObject): string | undefined {

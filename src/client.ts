@@ -8,6 +8,7 @@ import {
   ProtocolError,
   SessionClosedError,
 } from "./errors.js";
+import { SceneBatch } from "./scene-batch.js";
 import { FramedTransport } from "./transport.js";
 import {
   ALL_CAPABILITIES,
@@ -18,10 +19,15 @@ import {
   MAX_PRESENTATION_ID_BYTES,
   MAX_PRESENTATION_PACKET_BYTES,
   MAX_PRESENTATION_UPDATES,
+  MAX_SCENE_BATCH_ALIAS_BYTES,
+  MAX_SCENE_BATCH_BYTES,
+  MAX_SCENE_BATCH_OPERATIONS,
   MAX_STATIC_IMAGE_BYTES,
   MAX_WINDOW_TITLE_BYTES,
   TOKEN_ENV,
   type Capability,
+  type BatchNodeParent,
+  type BatchNodeRef,
   type CloseReason,
   type CreateNodeOptions,
   type CreatedNode,
@@ -52,6 +58,10 @@ import {
   type Resize,
   type Rgba8,
   type SceneEvent,
+  type SceneBatchNodeChanges,
+  type SceneBatchOperation,
+  type SceneBatchOperationResult,
+  type SceneBatchResult,
   type SceneLayer,
   type SessionId,
   type SessionInfo,
@@ -95,7 +105,7 @@ function deferred<T>(): Deferred<T> {
 }
 
 /**
- * An asynchronous, dependency-free CLP v2.1 client for Node.js.
+ * An asynchronous, dependency-free CLP v2.4 client for Node.js.
  *
  * `connectFromEnv` completes the `hello → init → init_complete → start →
  * started` lifecycle before resolving. Commands are serialized so a binary
@@ -169,14 +179,17 @@ export class Client {
         error instanceof HostError &&
         (error.code === "unsupported_version" || error.code === "invalid_message")
       ) {
-        // CLP v2.0 hosts predate the v2.1-only presentation and window
-        // metadata capabilities and can reject either enum value before they
-        // reach version negotiation. Retry once with the frozen v2.0 set.
+        // CLP v2.0 hosts predate v2.1 presentation/window metadata and v2.4
+        // scene batches. They can reject newer enum values before version
+        // negotiation, so retry once with the frozen v2.0 capability set.
         return Client.connectOnce(
           endpoint,
           token,
           capabilities.filter(
-            (capability) => capability !== "presentation" && capability !== "window_metadata",
+            (capability) =>
+              capability !== "presentation" &&
+              capability !== "window_metadata" &&
+              capability !== "scene_batch",
           ),
           CLP_PROTOCOL_V2_0,
         );
@@ -340,6 +353,29 @@ export class Client {
       throw unexpectedCommandResult("node_updated", result);
     }
     return decodeOptionalTextMetrics(result.text_metrics, "command result.text_metrics");
+  }
+
+  /**
+   * Commits a bounded ordered scene batch as one retained-state transition.
+   *
+   * Local aliases can only reference nodes created by earlier operations. A
+   * host that does not grant `scene_batch` causes `CapabilityNotGrantedError`;
+   * the SDK deliberately does not replay the batch as visible sequential
+   * commands.
+   */
+  public async applySceneBatch(batch: SceneBatch): Promise<SceneBatchResult> {
+    this.requireCapability("scene");
+    this.requireCapability("scene_batch");
+    const operations = this.serializeSceneBatch(batch.operations);
+    const result = await this.command(
+      { op: "scene_batch", operations },
+      undefined,
+      MAX_SCENE_BATCH_BYTES,
+    );
+    if (stringField(result, "kind", "command result") !== "scene_batch") {
+      throw unexpectedCommandResult("scene_batch", result);
+    }
+    return decodeSceneBatchResult(result);
   }
 
   /**
@@ -532,6 +568,7 @@ export class Client {
   private command(
     command: Record<string, unknown>,
     binaryPayload?: Uint8Array,
+    maximumJsonBytes?: number,
   ): Promise<Record<string, unknown>> {
     return this.enqueue(async () => {
       this.ensureOpen();
@@ -540,7 +577,14 @@ export class Client {
       const pending: PendingCommand = { requestId, deferred: deferred<Record<string, unknown>>() };
       this.pendingCommand = pending;
       try {
-        await this.transport.sendJson({ type: "command", request_id: requestId, command });
+        const message = { type: "command", request_id: requestId, command };
+        if (
+          maximumJsonBytes !== undefined &&
+          Buffer.byteLength(JSON.stringify(message), "utf8") > maximumJsonBytes
+        ) {
+          throw new InvalidInputError(`a scene batch may not exceed ${maximumJsonBytes} bytes`);
+        }
+        await this.transport.sendJson(message);
         if (binaryPayload !== undefined) {
           for (let offset = 0; offset < binaryPayload.byteLength; offset += BINARY_FRAGMENT_BYTES) {
             await this.transport.sendBinary(
@@ -789,6 +833,21 @@ export class Client {
   }
 
   private requireNodeChanges(changes: NodeChanges): void {
+    this.requireNodeChangeContents(changes);
+    if (changes.parent !== undefined) {
+      validateNodeParent(changes.parent, "changes.parent");
+    }
+    if (changes.layer !== undefined) {
+      validateSceneLayer(changes.layer, "changes.layer");
+    }
+  }
+
+  private requireNodeChangeContents(changes: {
+    readonly properties?: NodePropertiesPatch;
+    readonly visual?: NodeVisual;
+    readonly text?: string;
+    readonly textStyle?: TextStyle;
+  }): void {
     this.requireCapability("scene");
     if (
       changes.visual !== undefined &&
@@ -805,12 +864,6 @@ export class Client {
         this.requireCapability("external_drop");
       }
     }
-    if (changes.parent !== undefined) {
-      validateNodeParent(changes.parent, "changes.parent");
-    }
-    if (changes.layer !== undefined) {
-      validateSceneLayer(changes.layer, "changes.layer");
-    }
     if (changes.visual !== undefined) {
       validateNodeVisual(changes.visual, "changes.visual");
       if (changes.visual.kind === "image") {
@@ -823,6 +876,84 @@ export class Client {
         validateText(changes.text, "changes.text");
       }
       validateTextStyle(changes.textStyle, "changes.textStyle");
+    }
+  }
+
+  private serializeSceneBatch(
+    operations: readonly SceneBatchOperation[],
+  ): readonly Record<string, unknown>[] {
+    if (operations.length === 0) {
+      throw new InvalidInputError("a scene batch requires at least one operation");
+    }
+    if (operations.length > MAX_SCENE_BATCH_OPERATIONS) {
+      throw new InvalidInputError(
+        `a scene batch may contain at most ${MAX_SCENE_BATCH_OPERATIONS} operations`,
+      );
+    }
+
+    const aliases = new Set<string>();
+    return operations.map((operation, index) => {
+      const context = `operations[${index}]`;
+      switch (operation.op) {
+        case "create_node": {
+          const alias = validateSceneBatchAlias(operation.alias, `${context}.alias`);
+          if (aliases.has(alias)) {
+            throw new InvalidInputError(`the scene batch alias ${JSON.stringify(alias)} is reused`);
+          }
+          const parent =
+            operation.parent === undefined
+              ? undefined
+              : serializeBatchNodeRef(operation.parent, aliases, `${context}.parent`);
+          if (parent !== undefined && operation.layer !== undefined) {
+            throw new InvalidInputError(`${context} may not combine a child parent and root layer`);
+          }
+          this.requireNodeInput(operation.node);
+          const wire: Record<string, unknown> = {
+            op: "create_node",
+            alias,
+            node: serializeNodeInput(operation.node),
+          };
+          if (parent !== undefined) wire.parent = parent;
+          if (operation.layer !== undefined) {
+            wire.layer = validateSceneLayer(operation.layer, `${context}.layer`);
+          }
+          aliases.add(alias);
+          return wire;
+        }
+        case "set_node": {
+          const node = serializeBatchNodeRef(operation.node, aliases, `${context}.node`);
+          this.requireSceneBatchNodeChanges(operation.changes, aliases, `${context}.changes`);
+          return {
+            op: "set_node",
+            node,
+            changes: serializeSceneBatchNodeChanges(operation.changes, aliases, context),
+          };
+        }
+        case "remove_node":
+          return {
+            op: "remove_node",
+            node: serializeBatchNodeRef(operation.node, aliases, `${context}.node`),
+          };
+        default:
+          return assertNever(operation);
+      }
+    });
+  }
+
+  private requireSceneBatchNodeChanges(
+    changes: SceneBatchNodeChanges,
+    aliases: ReadonlySet<string>,
+    context: string,
+  ): void {
+    this.requireNodeChangeContents(changes);
+    if (changes.parent !== undefined) {
+      const parent = validateBatchNodeParent(changes.parent, aliases, `${context}.parent`);
+      if (parent.kind === "node" && changes.layer !== undefined) {
+        throw new InvalidInputError(`${context} may not combine a child parent and root layer`);
+      }
+    }
+    if (changes.layer !== undefined) {
+      validateSceneLayer(changes.layer, `${context}.layer`);
     }
   }
 
@@ -920,6 +1051,100 @@ function serializeNodeChanges(changes: NodeChanges): Record<string, unknown> {
     wire.text_style = serializeTextStyle(changes.textStyle, "changes.textStyle");
   }
   return wire;
+}
+
+function serializeSceneBatchNodeChanges(
+  changes: SceneBatchNodeChanges,
+  aliases: ReadonlySet<string>,
+  context: string,
+): Record<string, unknown> {
+  const wire: Record<string, unknown> = {};
+  if (changes.properties !== undefined) {
+    wire.properties = serializeNodePropertiesPatch(changes.properties);
+  }
+  if (changes.parent !== undefined) {
+    wire.parent = serializeBatchNodeParent(changes.parent, aliases, `${context}.changes.parent`);
+  }
+  if (changes.layer !== undefined) {
+    wire.layer = validateSceneLayer(changes.layer, `${context}.changes.layer`);
+  }
+  if (changes.visual !== undefined) {
+    wire.visual = serializeNodeVisual(changes.visual);
+  }
+  if (changes.text !== undefined) {
+    wire.text = changes.text;
+  }
+  if (changes.textStyle !== undefined) {
+    wire.text_style = serializeTextStyle(changes.textStyle, "changes.textStyle");
+  }
+  return wire;
+}
+
+function serializeBatchNodeRef(
+  reference: BatchNodeRef,
+  aliases: ReadonlySet<string>,
+  context: string,
+): string | Record<string, string> {
+  if (typeof reference === "string") {
+    return validateNodeHandle(reference as NodeHandle, context);
+  }
+  if (reference === null || typeof reference !== "object" || Array.isArray(reference)) {
+    throw new InvalidInputError(`${context} must be a node handle or batch alias`);
+  }
+  const alias = validateSceneBatchAlias(reference.alias, `${context}.alias`);
+  if (!aliases.has(alias)) {
+    throw new InvalidInputError(
+      `${context} refers to batch alias ${JSON.stringify(alias)} too early`,
+    );
+  }
+  return { alias };
+}
+
+function validateBatchNodeParent(
+  parent: BatchNodeParent,
+  aliases: ReadonlySet<string>,
+  context: string,
+): BatchNodeParent {
+  if (parent === null || typeof parent !== "object" || Array.isArray(parent)) {
+    throw new InvalidInputError(`${context} must be a root or node parent`);
+  }
+  if (parent.kind === "root") {
+    return parent;
+  }
+  if (parent.kind === "node") {
+    serializeBatchNodeRef(parent.node, aliases, `${context}.node`);
+    return parent;
+  }
+  throw new InvalidInputError(`${context} has an unknown parent kind`);
+}
+
+function serializeBatchNodeParent(
+  parent: BatchNodeParent,
+  aliases: ReadonlySet<string>,
+  context: string,
+): Record<string, unknown> {
+  const validated = validateBatchNodeParent(parent, aliases, context);
+  if (validated.kind === "root") {
+    return { kind: "root" };
+  }
+  return {
+    kind: "node",
+    node: serializeBatchNodeRef(validated.node, aliases, `${context}.node`),
+  };
+}
+
+function validateSceneBatchAlias(value: string, context: string): string {
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    Buffer.byteLength(value, "utf8") > MAX_SCENE_BATCH_ALIAS_BYTES ||
+    /[\u0000-\u001f\u007f-\u009f]/u.test(value)
+  ) {
+    throw new InvalidInputError(
+      `${context} must contain 1 to ${MAX_SCENE_BATCH_ALIAS_BYTES} UTF-8 bytes without control characters`,
+    );
+  }
+  return value;
 }
 
 function serializeNodeProperties(properties: NodeProperties): Record<string, unknown> {
@@ -1442,6 +1667,70 @@ function decodeBytes(value: unknown, context: string): Uint8Array {
       return byte;
     }),
   );
+}
+
+function decodeSceneBatchResult(result: Record<string, unknown>): SceneBatchResult {
+  const nodes: Record<string, CreatedNode> = {};
+  for (const [alias, value] of Object.entries(recordField(result, "nodes", "command result"))) {
+    const checkedAlias = decodeSceneBatchAlias(
+      alias,
+      `command result.nodes key ${JSON.stringify(alias)}`,
+    );
+    Object.defineProperty(nodes, checkedAlias, {
+      configurable: true,
+      enumerable: true,
+      value: decodeCreatedNode(value, `command result.nodes.${JSON.stringify(alias)}`),
+      writable: true,
+    });
+  }
+  return {
+    nodes,
+    operations: arrayField(result, "operations", "command result").map((operation, index) =>
+      decodeSceneBatchOperationResult(operation, `command result.operations[${index}]`),
+    ),
+  };
+}
+
+function decodeSceneBatchOperationResult(
+  value: unknown,
+  context: string,
+): SceneBatchOperationResult {
+  const result = record(value, context);
+  switch (stringField(result, "kind", context)) {
+    case "created":
+      return { kind: "created", alias: decodeSceneBatchAlias(result.alias, `${context}.alias`) };
+    case "updated": {
+      const textMetrics = decodeOptionalTextMetrics(result.text_metrics, `${context}.text_metrics`);
+      return textMetrics === undefined ? { kind: "updated" } : { kind: "updated", textMetrics };
+    }
+    case "removed":
+      return { kind: "removed" };
+    default:
+      throw new ProtocolError(`${context} has an unknown scene batch outcome`);
+  }
+}
+
+function decodeCreatedNode(value: unknown, context: string): CreatedNode {
+  const created = record(value, context);
+  const node: CreatedNode = {
+    node: decodeNodeHandle(created.node, `${context}.node`),
+  };
+  const textMetrics = decodeOptionalTextMetrics(created.text_metrics, `${context}.text_metrics`);
+  return textMetrics === undefined ? node : { ...node, textMetrics };
+}
+
+function decodeSceneBatchAlias(value: unknown, context: string): string {
+  const alias = stringValue(value, context);
+  if (
+    alias.length === 0 ||
+    Buffer.byteLength(alias, "utf8") > MAX_SCENE_BATCH_ALIAS_BYTES ||
+    /[\u0000-\u001f\u007f-\u009f]/u.test(alias)
+  ) {
+    throw new ProtocolError(
+      `${context} must contain 1 to ${MAX_SCENE_BATCH_ALIAS_BYTES} UTF-8 bytes without control characters`,
+    );
+  }
+  return alias;
 }
 
 function decodeOptionalTextMetrics(value: unknown, context: string): TextMetrics | undefined {

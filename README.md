@@ -19,17 +19,18 @@ library: it does not create a separate window, load into the host process, or
 make JavaScript and TypeScript privileged languages in the Chymeral ecosystem.
 
 The SDK presents idiomatic camelCase TypeScript APIs while serializing the CLP
-wire vocabulary internally. The published `1.5.0` package implements public
-CLP v2.1, including frame presentation and application window metadata. It
-retains a one-time v2.0 fallback and has no runtime npm dependencies, native
-addons, or foreign-function interface.
+wire vocabulary internally. The released `1.5.0` package implements public CLP
+v2.1, including frame presentation and application window metadata. The
+`current-dev` source line prepares `1.7.0` for CLP v2.4, adding reliable atomic
+scene batches. It retains a one-time v2.0 fallback and has no runtime npm
+dependencies, native addons, or foreign-function interface.
 
 ## At a glance
 
 | Topic                | Current contract                                |
 | -------------------- | ----------------------------------------------- |
 | npm package          | `@chymeral/node-sdk`                            |
-| Published package    | `1.5.0`, stable CLP `v2.1` API                  |
+| Development package  | `1.7.0`, CLP `v2.4` API target                  |
 | Compatibility        | One-time fallback to a CLP `v2.0` host          |
 | Runtime              | Node.js `22` or newer                           |
 | Platforms            | Linux and Windows                               |
@@ -39,8 +40,9 @@ addons, or foreign-function interface.
 
 This repository is the source of the first Node SDK. Its package version is
 independent from both Chymeral and CLP versions: compatibility is negotiated at
-connection time. The `1.5.x` line is the current stable public API and
-deliberately provides no provisional CLP v1.x aliases.
+connection time. The released `1.5.x` line is the stable public API; the
+unreleased `1.7.0` line develops CLP v2.4. Neither provides provisional CLP
+v1.x aliases.
 
 ## What it provides
 
@@ -49,6 +51,8 @@ deliberately provides no provisional CLP v1.x aliases.
 - Typed commands for retained scene nodes, atomic mutation, image ownership,
   intrinsic text, overlap queries, alpha contact, input passthrough, and
   supported external-file-drop targets.
+- A bounded `SceneBatch` builder for reliable atomic create/update/remove
+  revisions with local aliases and no implicit sequential fallback.
 - Promise-based commands plus queue and async-iterator APIs for input, scene,
   timing, resize, delivery-pressure, and closing notifications.
 - Session-owned RGBA8 and animated GIF uploads, including CLP binary-frame
@@ -63,8 +67,9 @@ deliberately provides no provisional CLP v1.x aliases.
 ## Requirements
 
 - Node.js `22` or newer.
-- Chymeral `1.5.0` or newer for CLP v2.1 presentation and window metadata. A
-  v2.0-only host remains supported through the documented capability fallback.
+- Chymeral `1.7.0` or newer for CLP v2.4 scene batches. A v2.0-only host
+  remains supported through the documented capability fallback; a v2.1 host
+  runs the earlier features without granting `scene_batch`.
 - A program launched from the shell inside that Chymeral window, so it inherits
   `CHYMERAL_CLP_ENDPOINT` and `CHYMERAL_CLP_TOKEN`.
 
@@ -95,6 +100,10 @@ npm run build
 cd ../your-application
 npm install ../chymeral-node-sdk
 ```
+
+`npm install @chymeral/node-sdk` currently resolves the published `1.5.x` CLP
+v2.1 package. Use the `current-dev` checkout through the local path while
+developing or validating the unreleased `1.7.0` CLP v2.4 scene-batch API.
 
 The package is ESM-only:
 
@@ -208,6 +217,58 @@ atomic patch; `removeNode()` removes a node and all descendants.
 an opaque `ImageHandle`. Resources belong to the creating session and cannot
 be shared across sessions. Remove unreferenced resources with `removeImage()`.
 
+## Atomic scene batches (CLP v2.4)
+
+Use `SceneBatch` when a complete initial tree or a structural revision must
+become one retained-scene state. It is a small typed command builder, not a
+widget toolkit or virtual DOM:
+
+```ts
+import { SceneBatch } from "@chymeral/node-sdk";
+
+const batch = new SceneBatch()
+  .createNode(
+    "panel",
+    {
+      kind: "rectangle",
+      properties: { x: 24, y: 24, width: 280, height: 160 },
+      color: [36, 88, 216, 255],
+    },
+    { layer: "overlay" },
+  )
+  .createNode(
+    "label",
+    {
+      kind: "text",
+      properties: { x: 16, y: 20 },
+      text: "Ready",
+    },
+    { parent: SceneBatch.alias("panel") },
+  )
+  .setNode(SceneBatch.alias("panel"), {
+    properties: { clipChildren: true },
+  });
+
+const result = await client.applySceneBatch(batch);
+const panel = result.nodes["panel"].node;
+```
+
+Request both `scene` and `scene_batch`. A batch contains 1–512 ordered
+operations in a 512 KiB JSON command envelope. Aliases are unique,
+control-character-free UTF-8 strings of 1–128 bytes and may be referenced only
+after the operation that creates them, making parent-before-child construction
+explicit. Only `create_node`, `set_node`, and `remove_node` participate;
+uploads/removals, metadata, subscriptions, and frame presentation remain
+separate commands.
+
+Chymeral validates the revision atomically and requests one redraw after a
+successful commit. `nodes` contains only aliases that remain live, so a
+temporary node created and removed in the same batch has no returned handle.
+Neither the result nor the redraw request promises compositor acknowledgement
+or physical scanout. If `scene_batch` is absent,
+`applySceneBatch()` throws `CapabilityNotGrantedError`; it never turns the
+request into visibly sequential `createNode()` or `setNode()` calls.
+
 ## Frame-paced presentation (CLP v2.1)
 
 Use `presentScene()` for the newest transient geometry, such as a draggable
@@ -235,11 +296,13 @@ coalesced, so an application must not await one status per pointer sample.
 scanout. Keep creation, removal, resource, text, visual, hierarchy, and
 interaction changes on `setNode()`.
 
-`Client.connect()` first requests CLP v2.1. If a v2.0-only host explicitly
+`Client.connect()` first requests CLP v2.4. If a v2.0-only host explicitly
 rejects the lifecycle request, it reconnects once using v2.0 without
-`presentation` or `window_metadata`. `presentScene()` and
-`setWindowMetadata()` then throw `CapabilityNotGrantedError`; it never expands
-a packet into individual `setNode()` calls.
+`presentation`, `window_metadata`, or `scene_batch`. A v2.1 host can negotiate
+its lower minor version and likewise does not grant `scene_batch`.
+`presentScene()`, `setWindowMetadata()`, and `applySceneBatch()` then throw
+`CapabilityNotGrantedError`; the SDK never expands a packet or batch into
+individual `setNode()` calls.
 
 ## Application window metadata (CLP v2.1)
 
@@ -370,10 +433,10 @@ npm run example:window-metadata
 ```
 
 The default run verifies lifecycle, subscriptions, timing, RGBA8/GIF image
-upload/removal, text metrics, alpha contact, overlap, session-owned window
-metadata when granted, and session-only closure. The manual mode additionally
-presents a layered scene for pointer, alpha, passthrough, GIF, and external-drop
-checks.
+upload/removal, text metrics, alpha contact, overlap, atomic scene-batch
+creation/update/removal when granted, session-owned window metadata when
+granted, and session-only closure. The manual mode additionally presents a
+layered scene for pointer, alpha, passthrough, GIF, and external-drop checks.
 
 `example:presentation` is the CLP v2.1 presentation probe. With Chymeral
 `1.5.0` or newer, click its blue panel once to focus it, move the pointer, scroll, resize,
@@ -381,6 +444,13 @@ then press `b` for a 180-update 60 Hz burst and `q` for its observed
 application-submit-to-host-status summary. Start the host with
 `CHYMERAL_PRESENTATION_TRACE=1` for separately labelled host-stage timing; the
 probe does not claim physical input-to-photon timing.
+
+`example:scene-batch` is the CLP v2.4 visual first-paint probe. With the
+unreleased Chymeral `current-dev` `1.7.0` line, it creates its complete panel,
+labels, and cards through one `SceneBatch` command. Confirm that the panel
+appears as one coherent composition rather than a visible serial assembly,
+then click it to focus the session and press `q`. The command removes only the
+probe session and leaves the terminal open.
 
 `example:window-metadata` is the CLP v2.1 visual probe. It uses a session-owned
 static icon and native title, then waits for interaction: click its blue panel,
@@ -403,6 +473,12 @@ This package also vendors the byte-checked
 It verifies public presentation and window-metadata serialization, status
 decoding, and v2.0 fallback.
 
+The byte-checked [CLP v2.4 fixture corpus](https://github.com/Chymeral/chymeral/tree/current-dev/protocol/fixtures/v2.4)
+verifies public `SceneBatch` serialization, local aliases, ordered results, and
+clean closure. A host negotiated below v2.4 does not grant `scene_batch`; the
+SDK reports that capability boundary rather than applying a hidden sequential
+fallback.
+
 GitHub Actions runs the repository quality checks on Linux and Windows with
 Node.js 22 and 24; `npm run ci` includes the vendored corpus replay.
 
@@ -422,6 +498,8 @@ Node.js 22 and 24; `npm run ci` includes the vendored corpus replay.
   — portable, language-neutral frame vectors for SDK conformance work.
 - [CLP v2.1 fixture corpus](https://github.com/Chymeral/chymeral/tree/main/protocol/fixtures/v2.1)
   — versioned vectors for frame presentation and application window metadata.
+- [CLP v2.4 fixture corpus](https://github.com/Chymeral/chymeral/tree/current-dev/protocol/fixtures/v2.4)
+  — versioned vectors for reliable atomic scene batches.
 - [Chymeral Rust SDK](https://github.com/Chymeral/chymeral-rust-sdk) — the
   separate Rust reference and conformance client, published on
   [crates.io](https://crates.io/crates/chymeral-rust-sdk).

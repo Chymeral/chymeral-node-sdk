@@ -41,6 +41,7 @@ For a live host check, start Chymeral, open its terminal, and run:
 npm run example:conformance
 npm run example:conformance -- --manual
 npm run example:presentation
+npm run example:scene-batch
 npm run example:window-metadata
 ```
 
@@ -59,11 +60,18 @@ The window-metadata probe is required for a CLP v2.1 title/icon change. Confirm
 title-only preservation, explicit clearing, session-only closure, and the
 backend's reported icon-support state on every affected platform.
 
+The conformance client and scene-batch visual probe are required for a CLP
+v2.4 scene-batch change. Use the conformance client to verify surviving aliases
+and the absence of a temporary removed alias. Use `example:scene-batch` to
+confirm its complete panel appears without visible progressive assembly and
+that `q` closes only the session, not the terminal.
+
 ## Public API and protocol compatibility
 
 Published `1.5.x` is a typed asynchronous binding for CLP v2.1 with one-time
-v2.0 fallback. The earlier `1.0.x` line implements CLP v2.0; the future
-breaking `2.0.0` line is reserved for the separately validated M26 platform
+v2.0 fallback. The `current-dev` `1.7.0` line adds CLP v2.4 scene batches while
+retaining that fallback. The earlier `1.0.x` line implements CLP v2.0; the
+future breaking `2.0.0` line is reserved for the separately validated platform
 expansion. A change to a
 public export, type, serialization rule, lifecycle behavior, error, Node.js
 baseline, or supported platform must include:
@@ -83,6 +91,12 @@ For a CLP v2.1 change, also update the reviewed
 [v2.1 fixture corpus](https://github.com/Chymeral/chymeral/tree/main/protocol/fixtures/v2.1)
 and its vendored `fixtures/clp/v2.1` snapshot together. Check both hashes and
 keep the v2.0 replay to prove one-time fallback compatibility.
+
+For a CLP v2.4 change, also update the reviewed
+[v2.4 fixture corpus](https://github.com/Chymeral/chymeral/tree/current-dev/protocol/fixtures/v2.4)
+and its vendored `fixtures/clp/v2.4` snapshot together. Check both hashes,
+retain the v2.0 and v2.1 replays, and add a public `SceneBatch` conformance
+case when the feature changes batch behavior.
 
 CLP is language-neutral. Do not add Node-only wire behavior, host internals as
 a dependency, silent compatibility aliases, or APIs that cannot be represented

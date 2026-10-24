@@ -2,10 +2,11 @@
  * Official Node.js and TypeScript client SDK for the Chymeral Link Protocol.
  *
  * Public API names use idiomatic camelCase. The SDK serializes them to the
- * CLP v2.1 wire format internally, with a one-time CLP v2.0 fallback for
+ * CLP v2.4 wire format internally, with a one-time CLP v2.0 fallback for
  * older hosts.
  */
 export { Client } from "./client.js";
+export { SceneBatch } from "./scene-batch.js";
 export {
   CapabilityNotGrantedError,
   ClpError,
@@ -27,6 +28,9 @@ export {
   MAX_PRESENTATION_ID_BYTES,
   MAX_PRESENTATION_PACKET_BYTES,
   MAX_PRESENTATION_UPDATES,
+  MAX_SCENE_BATCH_ALIAS_BYTES,
+  MAX_SCENE_BATCH_BYTES,
+  MAX_SCENE_BATCH_OPERATIONS,
   MAX_STATIC_IMAGE_BYTES,
   MAX_WINDOW_ICON_BYTES,
   MAX_WINDOW_ICON_DIMENSION,
@@ -35,6 +39,8 @@ export {
 } from "./types.js";
 export type {
   Capability,
+  BatchNodeParent,
+  BatchNodeRef,
   CloseReason,
   CreateNodeOptions,
   CreatedNode,
@@ -68,6 +74,11 @@ export type {
   Resize,
   Rgba8,
   SceneEvent,
+  SceneBatchCreateNodeOptions,
+  SceneBatchNodeChanges,
+  SceneBatchOperation,
+  SceneBatchOperationResult,
+  SceneBatchResult,
   SceneLayer,
   ScrollUnit,
   SessionId,

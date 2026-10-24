@@ -107,6 +107,33 @@ SDK snapshots byte for byte. Live presentation and metadata probes passed
 against Chymeral `1.5.0` on Windows, Linux/X11, and native Wayland; the latter
 correctly reports dynamic application icons unsupported while applying titles.
 
+## M26 atomic scene batches
+
+The `current-dev` `1.7.0` line adds CLP v2.4 `scene_batch` through the small,
+typed `SceneBatch` builder. It preserves idiomatic camelCase public methods
+while serializing the canonical snake_case command vocabulary. An operation can
+refer either to a pre-existing opaque handle or to `SceneBatch.alias(name)`, a
+batch-local alias created by an earlier operation. This permits one reliable
+description of a parent, its children, and related updates without constructing
+a second client-side scene model.
+
+`Client.applySceneBatch()` validates the negotiated `scene` and `scene_batch`
+capabilities, operation count, local alias ordering, hierarchy/layer rules,
+per-operation feature requirements, and the final JSON command envelope before
+it writes to local IPC. The ordered result exposes only aliases that remain
+live after commit, so temporary nodes can be safely created and removed inside
+the same revision. It is intentionally neither a virtual DOM nor an implicit
+sequential fallback mechanism.
+
+The client initially requests CLP v2.4. The established v2.0 retry removes
+`scene_batch` alongside the v2.1 additions, and a lower negotiated minor
+version similarly leaves the capability absent. In all cases,
+`applySceneBatch()` reports `CapabilityNotGrantedError` rather than replaying
+the request as individual `createNode()` or `setNode()` calls. The vendored
+v2.4 fixture corpus exercises this behavior through the public asynchronous
+API and fake host; the live conformance client covers a successful batch and
+session-only cleanup against an actual Chymeral window.
+
 ## Intentional boundaries
 
 - This package is a CLP client, not a terminal, widget toolkit, graphics engine

@@ -1,4 +1,10 @@
-import { Client, type CloseReason, type Notification, type TextMetrics } from "../src/index.js";
+import {
+  Client,
+  SceneBatch,
+  type CloseReason,
+  type Notification,
+  type TextMetrics,
+} from "../src/index.js";
 
 const ALPHA_TOGGLE_GIF = Uint8Array.from([
   0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -70,6 +76,48 @@ async function main(): Promise<void> {
     requireMetrics(updatedText, 7, 2, "text node update");
     const styledText = await client.setNode(text.node, { textStyle: { size: 20 } });
     requireValidStyledMetrics(styledText, updatedText);
+
+    if (client.hasCapability("scene_batch")) {
+      const batch = new SceneBatch()
+        .createNode(
+          "batch-root",
+          {
+            kind: "empty",
+            properties: { x: 320, y: 48, width: 120, height: 72, visible: false },
+          },
+          { layer: "overlay" },
+        )
+        .createNode(
+          "batch-label",
+          {
+            kind: "text",
+            properties: { x: 8, y: 8, visible: false },
+            text: "batch",
+          },
+          { parent: SceneBatch.alias("batch-root") },
+        )
+        .setNode(SceneBatch.alias("batch-root"), { properties: { x: 336 } })
+        .createNode(
+          "batch-temporary",
+          {
+            kind: "empty",
+            properties: { x: 0, y: 0, width: 1, height: 1, visible: false },
+          },
+          { layer: "overlay" },
+        )
+        .removeNode(SceneBatch.alias("batch-temporary"));
+      const batchResult = await client.applySceneBatch(batch);
+      const batchRoot = batchResult.nodes["batch-root"];
+      if (
+        batchRoot === undefined ||
+        batchResult.nodes["batch-label"] === undefined ||
+        batchResult.nodes["batch-temporary"] !== undefined ||
+        batchResult.operations.length !== 5
+      ) {
+        throw new Error("scene batch result did not reflect its final retained tree");
+      }
+      await client.removeNode(batchRoot.node);
+    }
 
     const collider = await client.createNode(
       {

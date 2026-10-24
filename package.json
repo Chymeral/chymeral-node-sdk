@@ -1,6 +1,6 @@
 {
   "name": "@chymeral/node-sdk",
-  "version": "1.5.0",
+  "version": "1.7.0",
   "description": "Official Node.js and TypeScript client SDK for applications compatible with the Chymeral Link Protocol (CLP).",
   "keywords": [
     "chymeral",
@@ -49,6 +49,7 @@
     "ci": "npm run check && npm run test && npm run build && npm run format",
     "example:conformance": "tsx examples/clp-conformance.ts",
     "example:presentation": "tsx examples/clp-presentation-probe.ts",
+    "example:scene-batch": "tsx examples/clp-scene-batch-probe.ts",
     "example:window-metadata": "tsx examples/clp-window-metadata-probe.ts",
     "prepack": "npm run build",
     "prepublishOnly": "npm run ci"

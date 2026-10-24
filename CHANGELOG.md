@@ -6,11 +6,25 @@ CLP have independent version lines.
 
 ## [Unreleased]
 
-### Fixed
+### Added
 
-- Replaced retired M20, M23, and M24 milestone labels in the conformance,
-  presentation, and window-metadata examples with stable CLP v2.1 and
-  Chymeral `1.5.0` wording.
+- CLP v2.4 `scene_batch`, the typed `SceneBatch` builder, batch-local aliases,
+  operation/result types, and `Client.applySceneBatch()`.
+- Byte-checked v2.4 fixture replay and live conformance coverage for atomic
+  create/update/remove batches, returned surviving handles, and temporary
+  aliases removed before commit.
+
+### Changed
+
+- Connection now requests CLP v2.4. The v2.0 retry removes `scene_batch`
+  together with the earlier v2.1-only capabilities; unavailable batches are
+  never silently expanded into sequential node commands.
+
+### Compatibility
+
+- The unreleased `1.7.0` development line implements CLP v2.4 and retains the
+  existing v2.0 fallback. The released `1.5.x` line remains the stable CLP
+  v2.1 package.
 
 ## [1.5.0] - 2026-10-22
 

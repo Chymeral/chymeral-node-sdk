@@ -9,6 +9,7 @@ import {
   CommandError,
   InvalidInputError,
   ProtocolError,
+  SceneBatch,
   type Capability,
   type NodeHandle,
 } from "../src/index.js";
@@ -16,7 +17,7 @@ import { FakeClpHost } from "./clp-host.js";
 
 const SESSION_ID = "session-1";
 
-test("completes CLP v2.1 lifecycle and serializes the complete public API", async (context) => {
+test("completes CLP v2.4 lifecycle and serializes the complete public API", async (context) => {
   const host = await FakeClpHost.start();
   context.after(() => host.close());
   const client = await connectClient(host);
@@ -259,6 +260,123 @@ test("completes CLP v2.1 lifecycle and serializes the complete public API", asyn
   });
   assert.deepEqual(await updateText, { columns: 7, rows: 2, width: 70, height: 36 });
 
+  const sceneBatch = client.applySceneBatch(
+    new SceneBatch()
+      .createNode(
+        "panel",
+        {
+          kind: "rectangle",
+          properties: { x: 8, y: 12, width: 240, height: 120, zIndex: 3 },
+          color: [36, 88, 216, 255],
+        },
+        { layer: "overlay" },
+      )
+      .createNode(
+        "label",
+        {
+          kind: "text",
+          properties: { x: 16, y: 24 },
+          text: "Ready",
+        },
+        { parent: SceneBatch.alias("panel") },
+      )
+      .setNode(SceneBatch.alias("panel"), {
+        properties: { x: 20, clipChildren: true },
+      }),
+  );
+  const sceneBatchEnvelope = await nextCommand(host, {
+    op: "scene_batch",
+    operations: [
+      {
+        op: "create_node",
+        alias: "panel",
+        layer: "overlay",
+        node: {
+          kind: "rectangle",
+          properties: {
+            x: 8,
+            y: 12,
+            width: 240,
+            height: 120,
+            visible: true,
+            clip_children: false,
+            z_index: 3,
+            overlap_enabled: false,
+            external_drop_enabled: false,
+            input_passthrough: false,
+          },
+          color: [36, 88, 216, 255],
+        },
+      },
+      {
+        op: "create_node",
+        alias: "label",
+        parent: { alias: "panel" },
+        node: {
+          kind: "text",
+          properties: {
+            x: 16,
+            y: 24,
+            visible: true,
+            clip_children: false,
+            z_index: 0,
+            overlap_enabled: false,
+            external_drop_enabled: false,
+            input_passthrough: false,
+          },
+          text: "Ready",
+          style: { weight: "normal", align: "start" },
+        },
+      },
+      {
+        op: "set_node",
+        node: { alias: "panel" },
+        changes: { properties: { x: 20, clip_children: true } },
+      },
+    ],
+  });
+  await host.sendJson({
+    type: "result",
+    request_id: sceneBatchEnvelope.requestId,
+    result: {
+      kind: "scene_batch",
+      nodes: {
+        label: {
+          node: "node-4",
+          text_metrics: { columns: 5, rows: 1, width: 48, height: 20 },
+        },
+        panel: { node: "node-3" },
+      },
+      operations: [
+        { kind: "created", alias: "panel" },
+        { kind: "created", alias: "label" },
+        { kind: "updated" },
+      ],
+    },
+  });
+  assert.deepEqual(await sceneBatch, {
+    nodes: {
+      label: {
+        node: "node-4",
+        textMetrics: { columns: 5, rows: 1, width: 48, height: 20 },
+      },
+      panel: { node: "node-3" },
+    },
+    operations: [
+      { kind: "created", alias: "panel" },
+      { kind: "created", alias: "label" },
+      { kind: "updated" },
+    ],
+  });
+  await assert.rejects(
+    client.applySceneBatch(
+      new SceneBatch().setNode(SceneBatch.alias("declared-later"), {
+        properties: { x: 1 },
+      }),
+    ),
+    InvalidInputError,
+  );
+
   const overlap = client.isOverlapping(imageNode);
   const overlapEnvelope = await nextCommand(host, { op: "is_overlapping", node: "node-1" });
   await host.sendJson({
@@ -326,7 +444,16 @@ test("rejects unsupported local operations before they reach the host", async (c
     }),
     InvalidInputError,
   );
-
+  await assert.rejects(
+    client.applySceneBatch(
+      new SceneBatch().createNode("unavailable", {
+        kind: "rectangle",
+        properties: { x: 0, y: 0, width: 1, height: 1 },
+        color: [0, 0, 0, 255],
+      }),
+    ),
+    CapabilityNotGrantedError,
+  );
   const close = client.close();
   assert.deepEqual(await host.nextJson(), { type: "close" });
   const reason = { kind: "client_requested" } as const;
@@ -416,25 +543,28 @@ test("coalesces presentation packets and reports their asynchronous status", asy
   );
 });
 
-test("reconnects once to a CLP v2.0 host without the presentation capability", async (context) => {
+test("reconnects once to a CLP v2.0 host without v2.1 or v2.4 capabilities", async (context) => {
   const host = await FakeClpHost.start();
   context.after(() => host.close());
 
   const connecting = Client.connect(host.endpoint, "test-token");
   assert.deepEqual(await host.nextJson(), {
     type: "hello",
-    protocol: { major: 2, minor: 1 },
+    protocol: { major: 2, minor: 4 },
     token: "test-token",
     capabilities: [...ALL_CAPABILITIES],
   });
   await host.sendJson({
     type: "error",
     code: "unsupported_version",
-    message: "CLP v2.1 is unavailable",
+    message: "CLP v2.4 is unavailable",
   });
 
   const legacyCapabilities = [...ALL_CAPABILITIES].filter(
-    (capability) => capability !== "presentation" && capability !== "window_metadata",
+    (capability) =>
+      capability !== "presentation" &&
+      capability !== "window_metadata" &&
+      capability !== "scene_batch",
   );
   assert.deepEqual(await host.nextJson(), {
     type: "hello",
@@ -457,6 +587,7 @@ test("reconnects once to a CLP v2.0 host without the presentation capability", a
   assert.deepEqual(client.session.protocolVersion, { major: 2, minor: 0 });
   assert.equal(client.hasCapability("presentation"), false);
   assert.equal(client.hasCapability("window_metadata"), false);
+  assert.equal(client.hasCapability("scene_batch"), false);
   assert.throws(
     () => client.presentScene([{ node: "node-1" as NodeHandle, properties: { x: 1 } }]),
     CapabilityNotGrantedError,
@@ -465,6 +596,7 @@ test("reconnects once to a CLP v2.0 host without the presentation capability", a
     client.setWindowMetadata({ title: "unavailable" }),
     CapabilityNotGrantedError,
   );
+  await assert.rejects(client.applySceneBatch(new SceneBatch()), CapabilityNotGrantedError);
 });
 
 test("surfaces command errors and reports a session-scoped program fault", async (context) => {
@@ -545,13 +677,13 @@ async function connectClient(
   const connecting = Client.connect(host.endpoint, "test-token", requestedCapabilities);
   assert.deepEqual(await host.nextJson(), {
     type: "hello",
-    protocol: { major: 2, minor: 1 },
+    protocol: { major: 2, minor: 4 },
     token: "test-token",
     capabilities: requestedCapabilities,
   });
   const init = {
     type: "init",
-    protocol: { major: 2, minor: 1 },
+    protocol: { major: 2, minor: 4 },
     session_id: SESSION_ID,
     capabilities: requestedCapabilities,
     context: {

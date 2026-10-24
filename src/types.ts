@@ -17,7 +17,7 @@ export const MAX_STATIC_IMAGE_BYTES = 64 * 1024 * 1024;
 export const MAX_GIF_BYTES = 16 * 1024 * 1024;
 
 /** The CLP version implemented by this SDK. */
-export const CLP_PROTOCOL_VERSION = { major: 2, minor: 1 } as const;
+export const CLP_PROTOCOL_VERSION = { major: 2, minor: 4 } as const;
 
 /** Maximum geometry updates accepted in one frame-presentation packet. */
 export const MAX_PRESENTATION_UPDATES = 256;
@@ -27,6 +27,15 @@ export const MAX_PRESENTATION_PACKET_BYTES = 64 * 1024;
 
 /** Maximum UTF-8 byte length of a presentation identifier. */
 export const MAX_PRESENTATION_ID_BYTES = 128;
+
+/** Maximum ordered operations accepted in one atomic scene batch. */
+export const MAX_SCENE_BATCH_OPERATIONS = 512;
+
+/** Maximum JSON command envelope size accepted for one atomic scene batch. */
+export const MAX_SCENE_BATCH_BYTES = 512 * 1024;
+
+/** Maximum UTF-8 byte length of a batch-local node alias. */
+export const MAX_SCENE_BATCH_ALIAS_BYTES = 128;
 
 /** Maximum UTF-8 byte length of an application-provided window title. */
 export const MAX_WINDOW_TITLE_BYTES = 256;
@@ -54,9 +63,10 @@ export const ALL_CAPABILITIES = [
   "text",
   "presentation",
   "window_metadata",
+  "scene_batch",
 ] as const;
 
-/** A capability name accepted by CLP v2.1. */
+/** A capability name accepted by CLP v2.4. */
 export type Capability = (typeof ALL_CAPABILITIES)[number];
 
 declare const sessionIdBrand: unique symbol;
@@ -260,6 +270,59 @@ export interface NodeChanges {
   readonly visual?: NodeVisual;
   readonly text?: string;
   readonly textStyle?: TextStyle;
+}
+
+/** A reference to an existing node or a node created earlier in one scene batch. */
+export type BatchNodeRef = NodeHandle | { readonly alias: string };
+
+/** A structural parent change accepted by a scene-batch `set_node` operation. */
+export type BatchNodeParent =
+  { readonly kind: "root" } | { readonly kind: "node"; readonly node: BatchNodeRef };
+
+/** Atomic partial node changes accepted inside a scene batch. */
+export interface SceneBatchNodeChanges {
+  readonly properties?: NodePropertiesPatch;
+  readonly parent?: BatchNodeParent;
+  readonly layer?: SceneLayer;
+  readonly visual?: NodeVisual;
+  readonly text?: string;
+  readonly textStyle?: TextStyle;
+}
+
+/** Optional placement for a node created inside a scene batch. */
+export interface SceneBatchCreateNodeOptions {
+  readonly parent?: BatchNodeRef;
+  readonly layer?: SceneLayer;
+}
+
+/** One ordered operation in an atomic retained-scene batch. */
+export type SceneBatchOperation =
+  | {
+      readonly op: "create_node";
+      readonly alias: string;
+      readonly node: NodeInput;
+      readonly parent?: BatchNodeRef;
+      readonly layer?: SceneLayer;
+    }
+  | {
+      readonly op: "set_node";
+      readonly node: BatchNodeRef;
+      readonly changes: SceneBatchNodeChanges;
+    }
+  | { readonly op: "remove_node"; readonly node: BatchNodeRef };
+
+/** The outcome of one operation in a successful scene batch. */
+export type SceneBatchOperationResult =
+  | { readonly kind: "created"; readonly alias: string }
+  | { readonly kind: "updated"; readonly textMetrics?: TextMetrics }
+  | { readonly kind: "removed" };
+
+/** The created handles and ordered outcomes returned by an atomic scene batch. */
+export interface SceneBatchResult {
+  /** Aliases that remain live after the batch commits. */
+  readonly nodes: Readonly<Record<string, CreatedNode>>;
+  /** Results in the same order as the submitted operations. */
+  readonly operations: readonly SceneBatchOperationResult[];
 }
 
 /** Optional root placement for a newly created node. */
