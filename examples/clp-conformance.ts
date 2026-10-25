@@ -270,7 +270,9 @@ async function manualInteractionDemo(client: Client): Promise<void> {
     { layer: "overlay" },
   );
 
-  console.log("CLP v2.1 manual interaction scene is ready.");
+  console.log(
+    `CLP v${client.session.protocolVersion.major}.${client.session.protocolVersion.minor} manual interaction scene is ready.`,
+  );
   console.log(
     "- Click the blue area or transparent orange-frame center: the blue node receives the event.",
   );

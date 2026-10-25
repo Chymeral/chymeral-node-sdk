@@ -238,16 +238,14 @@ async function main(): Promise<void> {
   try {
     client = await Client.connectFromEnv();
     if (!client.hasCapability("presentation")) {
-      throw new Error(
-        "the connected host did not grant CLP v2.1 presentation; run this probe in Chymeral 1.5.0 or newer",
-      );
+      throw new Error("the connected host did not grant presentation (introduced by CLP v2.1)");
     }
     await client.subscribe(["raw_input"]);
     nodes = await createProbeNodes(client);
     probe = new PresentationProbe(client, nodes);
 
     console.log(
-      "CLP v2.1 presentation probe connected. Click the blue panel once to focus this session, then move the pointer or scroll.",
+      `CLP v${client.session.protocolVersion.major}.${client.session.protocolVersion.minor} presentation probe connected. Click the blue panel once to focus this session, then move the pointer or scroll.`,
     );
     console.log(
       "Each input sample submits one atomic parent/control packet. Press b for a 180-update 60 Hz burst, or q to close only this session.",

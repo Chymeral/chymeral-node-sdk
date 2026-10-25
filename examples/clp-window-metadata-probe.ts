@@ -17,7 +17,7 @@ async function main(): Promise<void> {
   try {
     client = await Client.connectFromEnv(["images", "input", "scene", "text", "window_metadata"]);
     if (!client.hasCapability("window_metadata")) {
-      throw new Error("the connected host did not grant CLP v2.1 window_metadata");
+      throw new Error("the connected host did not grant window_metadata (introduced by CLP v2.1)");
     }
     await client.subscribe(["raw_input"]);
     nodes = await createProbeNodes(client);
@@ -40,7 +40,7 @@ async function main(): Promise<void> {
     metadataActive = true;
 
     console.log(
-      "CLP v2.1 window metadata probe connected. The native window title is now owned by this session.",
+      `CLP v${client.session.protocolVersion.major}.${client.session.protocolVersion.minor} window-metadata probe connected. The native window title is now owned by this session.`,
     );
     console.log(
       `Dynamic icon support on this backend: ${status.iconSupported}. Click the blue panel to focus this session.`,
@@ -117,7 +117,7 @@ async function createProbeNodes(client: Client): Promise<ProbeNodes> {
     {
       kind: "text",
       properties: { x: 16, y: 16 },
-      text: "CLP v2.1 window metadata probe\nclick here, then t / c / r / q",
+      text: "Window metadata probe\nclick here, then t / c / r / q",
       style: { color: [255, 255, 255, 255], weight: "bold" },
     },
     { parent: panel.node },

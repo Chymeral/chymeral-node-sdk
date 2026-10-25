@@ -19,6 +19,8 @@ CLP have independent version lines.
 - Connection now requests CLP v2.4. The v2.0 retry removes `scene_batch`
   together with the earlier v2.1-only capabilities; unavailable batches are
   never silently expanded into sequential node commands.
+- Live probes now report the CLP version negotiated with their host instead of
+  a stale feature-era version label.
 
 ### Compatibility
 

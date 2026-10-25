@@ -7,7 +7,7 @@
 <p align="center">
   <a href="https://github.com/Chymeral/chymeral-node-sdk/actions/workflows/ci.yml"><img src="https://github.com/Chymeral/chymeral-node-sdk/actions/workflows/ci.yml/badge.svg" alt="SDK quality checks"></a>
   <a href="https://www.npmjs.com/package/@chymeral/node-sdk"><img src="https://img.shields.io/npm/v/%40chymeral%2Fnode-sdk.svg" alt="npm version"></a>
-  <a href="https://github.com/Chymeral/chymeral-node-sdk/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Chymeral/chymeral-node-sdk.svg?v=1.5.0" alt="MIT License"></a>
+  <a href="https://github.com/Chymeral/chymeral-node-sdk/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Chymeral/chymeral-node-sdk.svg?v=1.7.0" alt="MIT License"></a>
 </p>
 
 > Official Node.js and TypeScript client SDK for the Chymeral Link Protocol
@@ -429,6 +429,7 @@ The conformance client needs an active Chymeral terminal session:
 npm run example:conformance
 npm run example:conformance -- --manual
 npm run example:presentation
+npm run example:scene-batch
 npm run example:window-metadata
 ```
 
@@ -437,6 +438,9 @@ upload/removal, text metrics, alpha contact, overlap, atomic scene-batch
 creation/update/removal when granted, session-owned window metadata when
 granted, and session-only closure. The manual mode additionally presents a
 layered scene for pointer, alpha, passthrough, GIF, and external-drop checks.
+Every live probe prints the CLP version negotiated with the connected host;
+references to v2.1 and v2.4 below name the protocol revision that introduced
+the tested capability.
 
 `example:presentation` is the CLP v2.1 presentation probe. With Chymeral
 `1.5.0` or newer, click its blue panel once to focus it, move the pointer, scroll, resize,

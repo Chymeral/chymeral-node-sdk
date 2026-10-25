@@ -17,14 +17,16 @@ async function main(): Promise<void> {
   try {
     client = await Client.connectFromEnv(["input", "scene", "scene_batch", "text"]);
     if (!client.hasCapability("scene_batch")) {
-      throw new Error("the connected host did not grant CLP v2.4 scene_batch");
+      throw new Error("the connected host did not grant scene_batch (introduced by CLP v2.4)");
     }
     await client.subscribe(["raw_input"]);
     console.log("Submitting the 13-operation atomic scene batch.");
     nodes = await createProbeNodes(client);
     console.log("The atomic scene batch was acknowledged by the host.");
 
-    console.log("CLP v2.4 scene-batch probe connected.");
+    console.log(
+      `CLP v${client.session.protocolVersion.major}.${client.session.protocolVersion.minor} scene-batch probe connected.`,
+    );
     console.log(
       "The complete panel was created by one atomic retained-scene command. Click anywhere inside it to confirm scene input and focus this session, then press q to close only this session.",
     );
