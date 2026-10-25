@@ -134,6 +134,16 @@ v2.4 fixture corpus exercises this behavior through the public asynchronous
 API and fake host; the live conformance client covers a successful batch and
 session-only cleanup against an actual Chymeral window.
 
+## M26.1 internal source structure
+
+M26.1 is a no-wire, no-API maintenance pass for the `current-dev` `1.7.0`
+line. `index.ts` remains the package's only public entry point; client
+orchestration, codec, validation, local transport, and `SceneBatch`
+construction are separated into focused internal units. The public TypeScript
+surface, runtime validation, asynchronous scheduling behavior, and
+byte-identical vendored fixture corpus remain unchanged. Internal source paths
+are not additional supported package imports.
+
 ## Intentional boundaries
 
 - This package is a CLP client, not a terminal, widget toolkit, graphics engine
