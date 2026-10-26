@@ -32,7 +32,7 @@ runtime npm dependencies, native addons, or foreign-function interface.
 | -------------------- | ----------------------------------------------- |
 | npm package          | `@chymeral/node-sdk`                            |
 | Current package      | `1.7.0`, CLP `v2.4`                             |
-| Compatibility        | One-time retry for a compatible earlier host     |
+| Compatibility        | One-time retry for a compatible earlier host    |
 | Runtime              | Node.js `22` or newer                           |
 | Platforms            | Linux and Windows                               |
 | Module format        | ESM only                                        |
