@@ -19,19 +19,20 @@ library: it does not create a separate window, load into the host process, or
 make JavaScript and TypeScript privileged languages in the Chymeral ecosystem.
 
 The SDK presents idiomatic camelCase TypeScript APIs while serializing the CLP
-wire vocabulary internally. The released `1.5.0` package implements public CLP
-v2.1, including frame presentation and application window metadata. The
-`current-dev` source line prepares `1.7.0` for CLP v2.4, adding reliable atomic
-scene batches. It retains a one-time v2.0 fallback and has no runtime npm
-dependencies, native addons, or foreign-function interface.
+wire vocabulary internally. The released `1.7.0` package implements public CLP
+v2.4, including frame presentation, application window metadata, and reliable
+atomic scene batches. It uses capability negotiation and a bounded
+compatibility retry for an earlier compatible host; unavailable operations fail
+explicitly rather than receiving a hidden sequential substitute. It has no
+runtime npm dependencies, native addons, or foreign-function interface.
 
 ## At a glance
 
 | Topic                | Current contract                                |
 | -------------------- | ----------------------------------------------- |
 | npm package          | `@chymeral/node-sdk`                            |
-| Development package  | `1.7.0`, CLP `v2.4` API target                  |
-| Compatibility        | One-time fallback to a CLP `v2.0` host          |
+| Current package      | `1.7.0`, CLP `v2.4`                             |
+| Compatibility        | One-time retry for a compatible earlier host     |
 | Runtime              | Node.js `22` or newer                           |
 | Platforms            | Linux and Windows                               |
 | Module format        | ESM only                                        |
@@ -40,9 +41,8 @@ dependencies, native addons, or foreign-function interface.
 
 This repository is the source of the first Node SDK. Its package version is
 independent from both Chymeral and CLP versions: compatibility is negotiated at
-connection time. The released `1.5.x` line is the stable public API; the
-unreleased `1.7.0` line develops CLP v2.4. Neither provides provisional CLP
-v1.x aliases.
+connection time. The released `1.7.x` line is the stable public API for CLP
+v2.4. It does not provide legacy command aliases.
 
 ## What it provides
 
@@ -57,9 +57,8 @@ v1.x aliases.
   timing, resize, delivery-pressure, and closing notifications.
 - Session-owned RGBA8 and animated GIF uploads, including CLP binary-frame
   fragmentation and ordered command delivery.
-- Coalesced CLP v2.1 frame-presentation packets for bounded transient geometry.
-- Session-owned CLP v2.1 native application titles and bounded static RGBA8
-  icons.
+- Coalesced frame-presentation packets for bounded transient geometry.
+- Session-owned native application titles and bounded static RGBA8 icons.
 - Opaque TypeScript `NodeHandle`, `ImageHandle`, and `SessionId` brands.
 - A live conformance client and deterministic protocol tests that do not require
   a graphical window.
@@ -67,9 +66,9 @@ v1.x aliases.
 ## Requirements
 
 - Node.js `22` or newer.
-- Chymeral `1.7.0` or newer for CLP v2.4 scene batches. A v2.0-only host
-  remains supported through the documented capability fallback; a v2.1 host
-  runs the earlier features without granting `scene_batch`.
+- Chymeral `1.7.0` or newer for the complete CLP v2.4 capability set. An
+  earlier compatible host can establish a session but grants only its negotiated
+  capabilities.
 - A program launched from the shell inside that Chymeral window, so it inherits
   `CHYMERAL_CLP_ENDPOINT` and `CHYMERAL_CLP_TOKEN`.
 
@@ -101,9 +100,9 @@ cd ../your-application
 npm install ../chymeral-node-sdk
 ```
 
-`npm install @chymeral/node-sdk` currently resolves the published `1.5.x` CLP
-v2.1 package. Use the `current-dev` checkout through the local path while
-developing or validating the unreleased `1.7.0` CLP v2.4 scene-batch API.
+`npm install @chymeral/node-sdk` resolves the published `1.7.x` CLP v2.4
+package. Use the local path checkout only when developing changes against the
+SDK itself.
 
 The package is ESM-only:
 
@@ -183,8 +182,8 @@ result with `client.hasCapability()`.
 | `overlap`         | Direct overlap queries and transition events                    |
 | `external_drop`   | Incoming desktop-file drops on supported backends               |
 | `text`            | Intrinsic terminal-cell text nodes                              |
-| `presentation`    | CLP v2.1 coalesced frame-paced geometry packets                 |
-| `window_metadata` | CLP v2.1 session-owned native title and static icon claim       |
+| `presentation`    | Coalesced frame-paced geometry packets                          |
+| `window_metadata` | Session-owned native title and static icon claim                |
 
 `subscribe()` accepts `raw_input`, `terminal`, and `timing`. Notifications
 can be consumed with `nextNotification()`, `tryNextNotification()`, or the
@@ -269,7 +268,7 @@ or physical scanout. If `scene_batch` is absent,
 `applySceneBatch()` throws `CapabilityNotGrantedError`; it never turns the
 request into visibly sequential `createNode()` or `setNode()` calls.
 
-## Frame-paced presentation (CLP v2.1)
+## Frame-paced presentation
 
 Use `presentScene()` for the newest transient geometry, such as a draggable
 parent and a sibling scrollbar thumb. It is not an asynchronous replacement for
@@ -296,15 +295,14 @@ coalesced, so an application must not await one status per pointer sample.
 scanout. Keep creation, removal, resource, text, visual, hierarchy, and
 interaction changes on `setNode()`.
 
-`Client.connect()` first requests CLP v2.4. If a v2.0-only host explicitly
-rejects the lifecycle request, it reconnects once using v2.0 without
-`presentation`, `window_metadata`, or `scene_batch`. A v2.1 host can negotiate
-its lower minor version and likewise does not grant `scene_batch`.
-`presentScene()`, `setWindowMetadata()`, and `applySceneBatch()` then throw
-`CapabilityNotGrantedError`; the SDK never expands a packet or batch into
-individual `setNode()` calls.
+`Client.connect()` first requests CLP v2.4. If a compatible earlier host
+explicitly rejects that lifecycle request, it reconnects once with its
+conservative compatibility profile and omits advanced capabilities.
+`presentScene()`, `setWindowMetadata()`, and `applySceneBatch()` throw
+`CapabilityNotGrantedError` when unavailable; the SDK never expands a packet or
+batch into individual `setNode()` calls.
 
-## Application window metadata (CLP v2.1)
+## Application window metadata
 
 Request `window_metadata` when an application should identify itself in the
 native Chymeral window. `setWindowMetadata()` accepts a partial patch: omit a
@@ -438,50 +436,39 @@ upload/removal, text metrics, alpha contact, overlap, atomic scene-batch
 creation/update/removal when granted, session-owned window metadata when
 granted, and session-only closure. The manual mode additionally presents a
 layered scene for pointer, alpha, passthrough, GIF, and external-drop checks.
-Every live probe prints the CLP version negotiated with the connected host;
-references to v2.1 and v2.4 below name the protocol revision that introduced
-the tested capability.
+Every live probe prints the CLP version negotiated with the connected host.
 
-`example:presentation` is the CLP v2.1 presentation probe. With Chymeral
-`1.5.0` or newer, click its blue panel once to focus it, move the pointer, scroll, resize,
-then press `b` for a 180-update 60 Hz burst and `q` for its observed
+`example:presentation` exercises frame-paced presentation. With a host that
+grants that capability, click its blue panel once to focus it, move the pointer,
+scroll, resize, then press `b` for a 180-update 60 Hz burst and `q` for its observed
 application-submit-to-host-status summary. Start the host with
 `CHYMERAL_PRESENTATION_TRACE=1` for separately labelled host-stage timing; the
 probe does not claim physical input-to-photon timing.
 
-`example:scene-batch` is the CLP v2.4 visual first-paint probe. With the
-unreleased Chymeral `current-dev` `1.7.0` line, it creates its complete panel,
-labels, and cards through one `SceneBatch` command. Confirm that the panel
+`example:scene-batch` is the CLP v2.4 visual first-paint probe. With Chymeral
+`1.7.0` or newer, it creates its complete panel, labels, and cards through one
+`SceneBatch` command. Confirm that the panel
 appears as one coherent composition rather than a visible serial assembly,
 then click it to focus the session and press `q`. The command removes only the
 probe session and leaves the terminal open.
 
-`example:window-metadata` is the CLP v2.1 visual probe. It uses a session-owned
-static icon and native title, then waits for interaction: click its blue panel,
+`example:window-metadata` exercises session-owned native title and static icon
+metadata, then waits for interaction: click its blue panel,
 press `t` to replace only the title while preserving the icon, `c` to clear
 both fields and restore Chymeral's terminal-derived fallback, `r` to restore
 both fields, and `q` to close only the session. Windows and supported Linux
 backends report dynamic icon support; native Wayland correctly reports `false`
 while still applying the title.
 
-The host repository maintains a versioned,
-language-neutral [CLP v2.0 fixture corpus](https://github.com/Chymeral/chymeral/tree/main/protocol/fixtures/v2.0).
-This package vendors its exact snapshot in `fixtures/clp/v2.0`, including
-`SHA256SUMS`. Its corpus test verifies that checksum and replays every vector
-through the public client and an independent fake host. Update both files only
-from a reviewed core revision. The corpus complements, rather than replaces,
-this package's focused fake-host tests and live conformance executable.
-
-This package also vendors the byte-checked
-[CLP v2.1 fixture corpus](https://github.com/Chymeral/chymeral/tree/main/protocol/fixtures/v2.1).
-It verifies public presentation and window-metadata serialization, status
-decoding, and v2.0 fallback.
-
-The byte-checked [CLP v2.4 fixture corpus](https://github.com/Chymeral/chymeral/tree/current-dev/protocol/fixtures/v2.4)
-verifies public `SceneBatch` serialization, local aliases, ordered results, and
-clean closure. A host negotiated below v2.4 does not grant `scene_batch`; the
-SDK reports that capability boundary rather than applying a hidden sequential
-fallback.
+The host repository maintains the language-neutral
+[CLP v2.4 fixture corpus](https://github.com/Chymeral/chymeral/tree/main/protocol/fixtures/v2.4).
+This package vendors its byte-checked snapshot in `fixtures/clp/v2.4`, including
+`SHA256SUMS`, and replays it through the public client and an independent fake
+host. It verifies the complete current lifecycle, capability, scene,
+presentation, metadata, and `SceneBatch` contract. The repository also retains
+compatibility regression vectors internally; the public v2.4 corpus remains the
+canonical reference for SDK authors. These checks complement focused fake-host
+tests and the live conformance executable.
 
 GitHub Actions runs the repository quality checks on Linux and Windows with
 Node.js 22 and 24; `npm run ci` includes the vendored corpus replay.
@@ -498,12 +485,8 @@ Node.js 22 and 24; `npm run ci` includes the vendored corpus replay.
   — architectural decisions behind the SDK.
 - [Chymeral manual](https://github.com/Chymeral/chymeral/blob/main/Main_Manual.md)
   — host configuration, terminal behavior, and runtime semantics.
-- [CLP v2.0 fixture corpus](https://github.com/Chymeral/chymeral/tree/main/protocol/fixtures/v2.0)
-  — portable, language-neutral frame vectors for SDK conformance work.
-- [CLP v2.1 fixture corpus](https://github.com/Chymeral/chymeral/tree/main/protocol/fixtures/v2.1)
-  — versioned vectors for frame presentation and application window metadata.
-- [CLP v2.4 fixture corpus](https://github.com/Chymeral/chymeral/tree/current-dev/protocol/fixtures/v2.4)
-  — versioned vectors for reliable atomic scene batches.
+- [CLP v2.4 fixture corpus](https://github.com/Chymeral/chymeral/tree/main/protocol/fixtures/v2.4)
+  — language-neutral conformance vectors for the complete current contract.
 - [Chymeral Rust SDK](https://github.com/Chymeral/chymeral-rust-sdk) — the
   separate Rust reference and conformance client, published on
   [crates.io](https://crates.io/crates/chymeral-rust-sdk).

@@ -50,13 +50,13 @@ scene rendering, text, alpha contact, GIF animation, input passthrough,
 overlap, or external drops. Validate affected behavior on Linux and Windows
 when the change crosses an OS or backend boundary.
 
-The presentation probe is required for a CLP v2.1 frame-presentation change.
-Click its panel to focus the session, exercise pointer movement, scroll,
+The presentation probe is required for a frame-presentation change. Click its
+panel to focus the session, exercise pointer movement, scroll,
 resize, and the `b` burst, then compare its summary with an optional
 `CHYMERAL_PRESENTATION_TRACE=1` host trace. Do not describe either value as
 physical input-to-photon latency.
 
-The window-metadata probe is required for a CLP v2.1 title/icon change. Confirm
+The window-metadata probe is required for a title/icon change. Confirm
 title-only preservation, explicit clearing, session-only closure, and the
 backend's reported icon-support state on every affected platform.
 
@@ -68,11 +68,9 @@ that `q` closes only the session, not the terminal.
 
 ## Public API and protocol compatibility
 
-Published `1.5.x` is a typed asynchronous binding for CLP v2.1 with one-time
-v2.0 fallback. The `current-dev` `1.7.0` line adds CLP v2.4 scene batches while
-retaining that fallback. The earlier `1.0.x` line implements CLP v2.0; the
-future breaking `2.0.0` line is reserved for the separately validated platform
-expansion. A change to a
+Published `1.7.x` is a typed asynchronous binding for CLP v2.4 with capability
+negotiation and a one-time compatibility retry for an earlier compatible host.
+A change to a
 public export, type, serialization rule, lifecycle behavior, error, Node.js
 baseline, or supported platform must include:
 
@@ -81,22 +79,12 @@ baseline, or supported platform must include:
 3. A `CHANGELOG.md` entry when it changes public behavior.
 4. A live conformance update when it changes the host-facing contract.
 
-Use the versioned [CLP v2.0 fixture corpus](https://github.com/Chymeral/chymeral/tree/main/protocol/fixtures/v2.0)
-as the source of `fixtures/clp/v2.0/fixtures.json` and `SHA256SUMS`. Update
-those two files together from a reviewed core revision, then run `npm test`.
-Do not add a network download or a dependency on the Chymeral host to this
-package's ordinary CI.
-
-For a CLP v2.1 change, also update the reviewed
-[v2.1 fixture corpus](https://github.com/Chymeral/chymeral/tree/main/protocol/fixtures/v2.1)
-and its vendored `fixtures/clp/v2.1` snapshot together. Check both hashes and
-keep the v2.0 replay to prove one-time fallback compatibility.
-
-For a CLP v2.4 change, also update the reviewed
-[v2.4 fixture corpus](https://github.com/Chymeral/chymeral/tree/current-dev/protocol/fixtures/v2.4)
-and its vendored `fixtures/clp/v2.4` snapshot together. Check both hashes,
-retain the v2.0 and v2.1 replays, and add a public `SceneBatch` conformance
-case when the feature changes batch behavior.
+For a CLP v2.4 change, update the reviewed
+[v2.4 fixture corpus](https://github.com/Chymeral/chymeral/tree/main/protocol/fixtures/v2.4)
+and its vendored `fixtures/clp/v2.4` snapshot together. Check both hashes, keep
+the complete compatibility regression replay, and add a public `SceneBatch`
+conformance case when the feature changes batch behavior. Do not add a network
+download or a dependency on the Chymeral host to this package's ordinary CI.
 
 CLP is language-neutral. Do not add Node-only wire behavior, host internals as
 a dependency, silent compatibility aliases, or APIs that cannot be represented
