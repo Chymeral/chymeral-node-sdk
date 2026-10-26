@@ -3,7 +3,7 @@
 This journal records the scope and decisions behind the first Node.js client
 library for the public Chymeral Link Protocol (CLP). It complements the
 product-facing [README](README.md) and the Chymeral host manual. The current
-public baseline is SDK `1.7.0` with CLP v2.4; numbered milestone and release
+public baseline is SDK `1.7.1` with CLP v2.4; numbered milestone and release
 references below are historical records, not current guidance.
 
 ## Initial scope
@@ -111,7 +111,7 @@ correctly reports dynamic application icons unsupported while applying titles.
 
 ## M26 atomic scene batches
 
-The released `1.7.0` line adds CLP v2.4 `scene_batch` through the small, typed
+The released `1.7.1` line adds CLP v2.4 `scene_batch` through the small, typed
 `SceneBatch` builder. It preserves idiomatic camelCase public methods
 while serializing the canonical snake_case command vocabulary. An operation can
 refer either to a pre-existing opaque handle or to `SceneBatch.alias(name)`, a
@@ -138,7 +138,7 @@ session-only cleanup against an actual Chymeral window.
 
 ## M26.1 internal source structure
 
-M26.1 is a no-wire, no-API maintenance pass for the `1.7.0` line. `index.ts`
+M26.1 is a no-wire, no-API maintenance pass for the `1.7.1` line. `index.ts`
 remains the package's only public entry point; client
 orchestration, codec, validation, local transport, and `SceneBatch`
 construction are separated into focused internal units. The public TypeScript

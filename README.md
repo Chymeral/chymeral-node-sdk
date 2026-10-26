@@ -7,7 +7,7 @@
 <p align="center">
   <a href="https://github.com/Chymeral/chymeral-node-sdk/actions/workflows/ci.yml"><img src="https://github.com/Chymeral/chymeral-node-sdk/actions/workflows/ci.yml/badge.svg" alt="SDK quality checks"></a>
   <a href="https://www.npmjs.com/package/@chymeral/node-sdk"><img src="https://img.shields.io/npm/v/%40chymeral%2Fnode-sdk.svg" alt="npm version"></a>
-  <a href="https://github.com/Chymeral/chymeral-node-sdk/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Chymeral/chymeral-node-sdk.svg?v=1.7.0" alt="MIT License"></a>
+  <a href="https://github.com/Chymeral/chymeral-node-sdk/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Chymeral/chymeral-node-sdk.svg?v=1.7.1" alt="MIT License"></a>
 </p>
 
 > Official Node.js and TypeScript client SDK for the Chymeral Link Protocol
@@ -19,7 +19,7 @@ library: it does not create a separate window, load into the host process, or
 make JavaScript and TypeScript privileged languages in the Chymeral ecosystem.
 
 The SDK presents idiomatic camelCase TypeScript APIs while serializing the CLP
-wire vocabulary internally. The released `1.7.0` package implements public CLP
+wire vocabulary internally. The released `1.7.1` package implements public CLP
 v2.4, including frame presentation, application window metadata, and reliable
 atomic scene batches. It uses capability negotiation and a bounded
 compatibility retry for an earlier compatible host; unavailable operations fail
@@ -31,7 +31,7 @@ runtime npm dependencies, native addons, or foreign-function interface.
 | Topic                | Current contract                                |
 | -------------------- | ----------------------------------------------- |
 | npm package          | `@chymeral/node-sdk`                            |
-| Current package      | `1.7.0`, CLP `v2.4`                             |
+| Current package      | `1.7.1`, CLP `v2.4`                             |
 | Compatibility        | One-time retry for a compatible earlier host    |
 | Runtime              | Node.js `22` or newer                           |
 | Platforms            | Linux and Windows                               |
@@ -66,7 +66,7 @@ v2.4. It does not provide legacy command aliases.
 ## Requirements
 
 - Node.js `22` or newer.
-- Chymeral `1.7.0` or newer for the complete CLP v2.4 capability set. An
+- Chymeral `1.7.1` or newer for the complete CLP v2.4 capability set. An
   earlier compatible host can establish a session but grants only its negotiated
   capabilities.
 - A program launched from the shell inside that Chymeral window, so it inherits
@@ -446,7 +446,7 @@ application-submit-to-host-status summary. Start the host with
 probe does not claim physical input-to-photon timing.
 
 `example:scene-batch` is the CLP v2.4 visual first-paint probe. With Chymeral
-`1.7.0` or newer, it creates its complete panel, labels, and cards through one
+`1.7.1` or newer, it creates its complete panel, labels, and cards through one
 `SceneBatch` command. Confirm that the panel
 appears as one coherent composition rather than a visible serial assembly,
 then click it to focus the session and press `q`. The command removes only the
